@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codelayer.hu/forge/hdl-graph/v1",
+  "title": "HDL Graph",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "name",
+    "nodes",
+    "nets"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "name": {
+      "type": "string"
+    },
+    "topPorts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "direction"
+        ]
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "module",
+          "ports"
+        ]
+      }
+    },
+    "nets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ]
+      }
+    }
+  }
+}

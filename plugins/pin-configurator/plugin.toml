@@ -1,0 +1,60 @@
+manifest_version = 1
+id = "hu.codelayer.pin-configurator"
+name = "Pin Configurator"
+version = "0.1.0"
+publisher = "CodeLayer"
+description = "Device pin planning, conflict validation and constraint generation."
+runtime = "python"
+entrypoint = "pin_configurator.plugin:create_plugin"
+platform_api = ">=0.1.0,<0.2.0"
+supported_os = ["windows", "linux", "macos"]
+activation_events = ["onWorkbench:pin-planning", "onFileExtension:.pinplan", "onCommand:pinConfigurator.autoAssign"]
+
+[provides]
+"codelayer.device-database" = "1.0.0"
+"codelayer.pinmux-solver" = "1.0.0"
+"codelayer.pin-codegen" = "1.0.0"
+
+[permissions]
+workspace_read = true
+workspace_write = true
+network = false
+serial = false
+usb = false
+spawn_processes = []
+
+[[contributes.workbenches]]
+id = "pin-planning"
+title = "Pin Planning"
+icon = "resources/pin-planning.svg"
+order = 10
+
+[[contributes.commands]]
+id = "pinConfigurator.autoAssign"
+title = "Automatically Assign Pins"
+category = "Pin Configurator"
+
+[[contributes.commands]]
+id = "pinConfigurator.validate"
+title = "Validate Pin Plan"
+category = "Pin Configurator"
+
+[[contributes.commands]]
+id = "pinConfigurator.generate"
+title = "Generate Constraints"
+category = "Pin Configurator"
+
+[[contributes.views]]
+id = "pinConfigurator.peripherals"
+title = "Peripherals"
+location = "left"
+
+[[contributes.views]]
+id = "pinConfigurator.conflicts"
+title = "Pin Conflicts"
+location = "bottom"
+
+[[contributes.editors]]
+id = "pinConfigurator.packageEditor"
+label = "Package Editor"
+extensions = [".pinplan", ".pinmap"]

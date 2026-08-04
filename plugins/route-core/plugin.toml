@@ -1,0 +1,33 @@
+manifest_version = 1
+id = "hu.codelayer.route-core"
+name = "Route Core"
+version = "0.1.0"
+publisher = "CodeLayer"
+description = "Headless obstacle-aware orthogonal routing service."
+runtime = "python"
+entrypoint = "route_core.plugin:create_plugin"
+platform_api = ">=0.1.0,<0.2.0"
+supported_os = ["windows", "linux", "macos"]
+activation_events = ["onService:codelayer.routing.orthogonal", "onCommand:routeCore.routeSample"]
+
+[provides]
+"codelayer.routing.orthogonal" = "1.0.0"
+"codelayer.routing.validation" = "1.0.0"
+
+[permissions]
+workspace_read = true
+workspace_write = false
+network = false
+serial = false
+usb = false
+spawn_processes = []
+
+[[contributes.commands]]
+id = "routeCore.routeSample"
+title = "Route Sample Net"
+category = "Routing"
+
+[[contributes.views]]
+id = "routeCore.diagnostics"
+title = "Routing Diagnostics"
+location = "bottom"

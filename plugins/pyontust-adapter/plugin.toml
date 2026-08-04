@@ -1,0 +1,43 @@
+manifest_version = 1
+id = "hu.codelayer.pyontust-adapter"
+name = "PyOnTrust Adapter"
+version = "0.1.0"
+publisher = "CodeLayer"
+description = "Safe workflow and artifact adapter reserved for PyOnTrust domain integration."
+runtime = "python"
+entrypoint = "pyontust_adapter.plugin:create_plugin"
+platform_api = ">=0.1.0,<0.2.0"
+supported_os = ["windows", "linux", "macos"]
+activation_events = ["onWorkbench:automation", "onFileExtension:.forgeflow", "onCommand:pyontust.runWorkflow"]
+
+[provides]
+"codelayer.automation.workflow" = "1.0.0"
+
+[permissions]
+workspace_read = true
+workspace_write = true
+network = false
+serial = false
+usb = false
+spawn_processes = []
+
+[[contributes.workbenches]]
+id = "automation"
+title = "Automation"
+icon = "resources/automation.svg"
+order = 30
+
+[[contributes.commands]]
+id = "pyontust.runWorkflow"
+title = "Run Safe Workflow"
+category = "PyOnTrust"
+
+[[contributes.views]]
+id = "pyontust.workflows"
+title = "Workflows"
+location = "left"
+
+[[contributes.editors]]
+id = "pyontust.workflowEditor"
+label = "Forge Workflow"
+extensions = [".forgeflow"]

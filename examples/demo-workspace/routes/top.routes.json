@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {
+      "net": "controller.pwm_out->top.pwm",
+      "points": [
+        {
+          "x": 100,
+          "y": 100
+        },
+        {
+          "x": 300,
+          "y": 100
+        },
+        {
+          "x": 300,
+          "y": 240
+        }
+      ]
+    }
+  ]
+}

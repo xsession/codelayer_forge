@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "name": "motor_control_top",
+  "topPorts": [
+    {
+      "name": "clk",
+      "direction": "input"
+    },
+    {
+      "name": "enable",
+      "direction": "input"
+    },
+    {
+      "name": "pwm",
+      "direction": "output"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "controller",
+      "module": "pwm_controller",
+      "sequential": true,
+      "ports": {
+        "inputs": [
+          "clk",
+          "enable"
+        ],
+        "outputs": [
+          "pwm_out"
+        ]
+      },
+      "parameters": {
+        "PERIOD": 1000
+      }
+    }
+  ],
+  "nets": [
+    {
+      "from": "top.clk",
+      "to": "controller.clk"
+    },
+    {
+      "from": "top.enable",
+      "to": "controller.enable"
+    },
+    {
+      "from": "controller.pwm_out",
+      "to": "top.pwm"
+    }
+  ]
+}

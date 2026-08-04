@@ -1,0 +1,17 @@
+{
+  "name": "CodeLayer Forge",
+  "build": { "dockerfile": "../Dockerfile.dev", "context": ".." },
+  "workspaceFolder": "/workspace",
+  "mounts": ["source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached"],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "ms-python.python",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  },
+  "postCreateCommand": "python3 scripts/build_catalog.py && python3 scripts/doctor.py"
+}

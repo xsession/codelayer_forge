@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codelayer.hu/forge/route-request/v1",
+  "title": "Orthogonal Route Request",
+  "type": "object",
+  "required": [
+    "source",
+    "target"
+  ],
+  "properties": {
+    "source": {
+      "$ref": "#/$defs/point"
+    },
+    "target": {
+      "$ref": "#/$defs/point"
+    },
+    "obstacles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/rect"
+      }
+    },
+    "grid": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "clearance": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bendPenalty": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "point": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

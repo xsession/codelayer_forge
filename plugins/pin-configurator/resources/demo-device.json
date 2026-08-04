@@ -1,0 +1,79 @@
+{
+  "id": "demo.fpga-48",
+  "name": "CodeLayer Demo FPGA 48",
+  "package": "QFN48",
+  "pins": [
+    {
+      "name": "A1",
+      "capabilities": [
+        "GPIO",
+        "UART_TX",
+        "SPI_MOSI"
+      ],
+      "bank": "0",
+      "voltage": 3.3
+    },
+    {
+      "name": "A2",
+      "capabilities": [
+        "GPIO",
+        "UART_RX",
+        "SPI_MISO"
+      ],
+      "bank": "0",
+      "voltage": 3.3
+    },
+    {
+      "name": "A3",
+      "capabilities": [
+        "GPIO",
+        "SPI_SCK",
+        "I2C_SCL"
+      ],
+      "bank": "0",
+      "voltage": 3.3
+    },
+    {
+      "name": "A4",
+      "capabilities": [
+        "GPIO",
+        "SPI_CS",
+        "I2C_SDA"
+      ],
+      "bank": "0",
+      "voltage": 3.3
+    },
+    {
+      "name": "B1",
+      "capabilities": [
+        "GPIO",
+        "PWM"
+      ],
+      "bank": "1",
+      "voltage": 3.3
+    },
+    {
+      "name": "B2",
+      "capabilities": [
+        "GPIO",
+        "ADC"
+      ],
+      "bank": "1",
+      "voltage": 3.3
+    },
+    {
+      "name": "VCC",
+      "capabilities": [
+        "POWER"
+      ],
+      "reserved": true
+    },
+    {
+      "name": "GND",
+      "capabilities": [
+        "GROUND"
+      ],
+      "reserved": true
+    }
+  ]
+}

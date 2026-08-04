@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "forge-demo",
+  "name": "CodeLayer Forge Demo",
+  "description": "Cross-plugin engineering workspace demonstrating pin planning, HDL design and routing.",
+  "enabled_plugins": [
+    "hu.codelayer.pin-configurator",
+    "hu.codelayer.route-core",
+    "hu.codelayer.openhdl-designer",
+    "hu.codelayer.pyontust-adapter"
+  ],
+  "settings": {
+    "grid": 10,
+    "units": "metric"
+  }
+}

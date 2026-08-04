@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":1,"method":"forge/initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"forge/executeCommand","params":{"command":"pinConfigurator.autoAssign","arguments":{"pins":[{"name":"A1","capabilities":["GPIO","UART_TX"]},{"name":"A2","capabilities":["GPIO","UART_RX"]},{"name":"B1","capabilities":["GPIO"]}],"signals":[{"id":"uart_tx","requires":["UART_TX"]},{"id":"uart_rx","requires":["UART_RX"]},{"id":"led","requires":["GPIO"],"preferred":["B1"]}]}}}
+{"jsonrpc":"2.0","id":3,"method":"forge/shutdown","params":{}}

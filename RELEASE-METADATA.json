@@ -1,0 +1,17 @@
+{
+  "name": "CodeLayer Forge",
+  "version": "0.1.0",
+  "createdAt": "2026-08-03T19:08:45.553926+00:00",
+  "type": "source-distribution",
+  "platformApiVersion": "0.1.0",
+  "verification": {
+    "pythonTests": 15,
+    "pythonSyntax": "passed",
+    "jsonAndTomlParsing": "passed",
+    "pluginHostLifecycle": "passed",
+    "capabilityBroker": "passed",
+    "pluginPackageIntegrity": "passed",
+    "javascriptSyntax": "passed",
+    "rustCompilation": "not-run-in-artifact-container; configured in CI"
+  }
+}

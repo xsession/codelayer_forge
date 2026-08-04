@@ -1,0 +1,303 @@
+{
+  "schemaVersion": 1,
+  "platformApiVersion": "0.1.0",
+  "generatedAt": "2026-08-03T19:08:36.187334+00:00",
+  "plugins": [
+    {
+      "root": "plugins/openhdl-designer",
+      "manifest_path": "plugins/openhdl-designer/plugin.toml",
+      "manifest": {
+        "manifest_version": 1,
+        "id": "hu.codelayer.openhdl-designer",
+        "name": "OpenHDL Designer",
+        "version": "0.1.0",
+        "publisher": "CodeLayer",
+        "description": "HDL graph validation, analysis and structural Verilog generation.",
+        "runtime": "python",
+        "entrypoint": "openhdl_designer.plugin:create_plugin",
+        "platform_api": ">=0.1.0,<0.2.0",
+        "supported_os": [
+          "windows",
+          "linux",
+          "macos"
+        ],
+        "activation_events": [
+          "onWorkbench:hdl-design",
+          "onFileExtension:.hdlgraph",
+          "onCommand:openHdl.validateGraph"
+        ],
+        "provides": {
+          "codelayer.hdl.graph": "1.0.0",
+          "codelayer.hdl.codegen.verilog": "1.0.0"
+        },
+        "requires": {
+          "codelayer.routing.orthogonal": ">=1.0.0,<2.0.0"
+        },
+        "permissions": {
+          "workspace_read": true,
+          "workspace_write": true,
+          "network": false,
+          "serial": false,
+          "usb": false,
+          "spawn_processes": []
+        },
+        "contributes": {
+          "workbenches": [
+            {
+              "id": "hdl-design",
+              "title": "HDL Design",
+              "icon": "resources/hdl-design.svg",
+              "order": 20
+            }
+          ],
+          "commands": [
+            {
+              "id": "openHdl.validateGraph",
+              "title": "Validate HDL Graph",
+              "category": "OpenHDL Designer"
+            },
+            {
+              "id": "openHdl.generateVerilog",
+              "title": "Generate Structural Verilog",
+              "category": "OpenHDL Designer"
+            }
+          ],
+          "views": [
+            {
+              "id": "openHdl.hierarchy",
+              "title": "HDL Hierarchy",
+              "location": "left"
+            },
+            {
+              "id": "openHdl.problems",
+              "title": "HDL Problems",
+              "location": "bottom"
+            }
+          ],
+          "editors": [
+            {
+              "id": "openHdl.graphEditor",
+              "label": "HDL Block Diagram",
+              "extensions": [
+                ".hdlgraph",
+                ".fsmgraph"
+              ]
+            }
+          ]
+        }
+      },
+      "platform_compatible": true
+    },
+    {
+      "root": "plugins/pin-configurator",
+      "manifest_path": "plugins/pin-configurator/plugin.toml",
+      "manifest": {
+        "manifest_version": 1,
+        "id": "hu.codelayer.pin-configurator",
+        "name": "Pin Configurator",
+        "version": "0.1.0",
+        "publisher": "CodeLayer",
+        "description": "Device pin planning, conflict validation and constraint generation.",
+        "runtime": "python",
+        "entrypoint": "pin_configurator.plugin:create_plugin",
+        "platform_api": ">=0.1.0,<0.2.0",
+        "supported_os": [
+          "windows",
+          "linux",
+          "macos"
+        ],
+        "activation_events": [
+          "onWorkbench:pin-planning",
+          "onFileExtension:.pinplan",
+          "onCommand:pinConfigurator.autoAssign"
+        ],
+        "provides": {
+          "codelayer.device-database": "1.0.0",
+          "codelayer.pinmux-solver": "1.0.0",
+          "codelayer.pin-codegen": "1.0.0"
+        },
+        "permissions": {
+          "workspace_read": true,
+          "workspace_write": true,
+          "network": false,
+          "serial": false,
+          "usb": false,
+          "spawn_processes": []
+        },
+        "contributes": {
+          "workbenches": [
+            {
+              "id": "pin-planning",
+              "title": "Pin Planning",
+              "icon": "resources/pin-planning.svg",
+              "order": 10
+            }
+          ],
+          "commands": [
+            {
+              "id": "pinConfigurator.autoAssign",
+              "title": "Automatically Assign Pins",
+              "category": "Pin Configurator"
+            },
+            {
+              "id": "pinConfigurator.validate",
+              "title": "Validate Pin Plan",
+              "category": "Pin Configurator"
+            },
+            {
+              "id": "pinConfigurator.generate",
+              "title": "Generate Constraints",
+              "category": "Pin Configurator"
+            }
+          ],
+          "views": [
+            {
+              "id": "pinConfigurator.peripherals",
+              "title": "Peripherals",
+              "location": "left"
+            },
+            {
+              "id": "pinConfigurator.conflicts",
+              "title": "Pin Conflicts",
+              "location": "bottom"
+            }
+          ],
+          "editors": [
+            {
+              "id": "pinConfigurator.packageEditor",
+              "label": "Package Editor",
+              "extensions": [
+                ".pinplan",
+                ".pinmap"
+              ]
+            }
+          ]
+        }
+      },
+      "platform_compatible": true
+    },
+    {
+      "root": "plugins/pyontust-adapter",
+      "manifest_path": "plugins/pyontust-adapter/plugin.toml",
+      "manifest": {
+        "manifest_version": 1,
+        "id": "hu.codelayer.pyontust-adapter",
+        "name": "PyOnTrust Adapter",
+        "version": "0.1.0",
+        "publisher": "CodeLayer",
+        "description": "Safe workflow and artifact adapter reserved for PyOnTrust domain integration.",
+        "runtime": "python",
+        "entrypoint": "pyontust_adapter.plugin:create_plugin",
+        "platform_api": ">=0.1.0,<0.2.0",
+        "supported_os": [
+          "windows",
+          "linux",
+          "macos"
+        ],
+        "activation_events": [
+          "onWorkbench:automation",
+          "onFileExtension:.forgeflow",
+          "onCommand:pyontust.runWorkflow"
+        ],
+        "provides": {
+          "codelayer.automation.workflow": "1.0.0"
+        },
+        "permissions": {
+          "workspace_read": true,
+          "workspace_write": true,
+          "network": false,
+          "serial": false,
+          "usb": false,
+          "spawn_processes": []
+        },
+        "contributes": {
+          "workbenches": [
+            {
+              "id": "automation",
+              "title": "Automation",
+              "icon": "resources/automation.svg",
+              "order": 30
+            }
+          ],
+          "commands": [
+            {
+              "id": "pyontust.runWorkflow",
+              "title": "Run Safe Workflow",
+              "category": "PyOnTrust"
+            }
+          ],
+          "views": [
+            {
+              "id": "pyontust.workflows",
+              "title": "Workflows",
+              "location": "left"
+            }
+          ],
+          "editors": [
+            {
+              "id": "pyontust.workflowEditor",
+              "label": "Forge Workflow",
+              "extensions": [
+                ".forgeflow"
+              ]
+            }
+          ]
+        }
+      },
+      "platform_compatible": true
+    },
+    {
+      "root": "plugins/route-core",
+      "manifest_path": "plugins/route-core/plugin.toml",
+      "manifest": {
+        "manifest_version": 1,
+        "id": "hu.codelayer.route-core",
+        "name": "Route Core",
+        "version": "0.1.0",
+        "publisher": "CodeLayer",
+        "description": "Headless obstacle-aware orthogonal routing service.",
+        "runtime": "python",
+        "entrypoint": "route_core.plugin:create_plugin",
+        "platform_api": ">=0.1.0,<0.2.0",
+        "supported_os": [
+          "windows",
+          "linux",
+          "macos"
+        ],
+        "activation_events": [
+          "onService:codelayer.routing.orthogonal",
+          "onCommand:routeCore.routeSample"
+        ],
+        "provides": {
+          "codelayer.routing.orthogonal": "1.0.0",
+          "codelayer.routing.validation": "1.0.0"
+        },
+        "permissions": {
+          "workspace_read": true,
+          "workspace_write": false,
+          "network": false,
+          "serial": false,
+          "usb": false,
+          "spawn_processes": []
+        },
+        "contributes": {
+          "commands": [
+            {
+              "id": "routeCore.routeSample",
+              "title": "Route Sample Net",
+              "category": "Routing"
+            }
+          ],
+          "views": [
+            {
+              "id": "routeCore.diagnostics",
+              "title": "Routing Diagnostics",
+              "location": "bottom"
+            }
+          ]
+        }
+      },
+      "platform_compatible": true
+    }
+  ]
+}

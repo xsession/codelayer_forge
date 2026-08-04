@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.codelayer.hu/forge/pin-plan/v1",
+  "title": "Pin Plan",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "device",
+    "signals",
+    "assignments"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "device": {
+      "type": "string"
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "requires"
+        ]
+      }
+    },
+    "assignments": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

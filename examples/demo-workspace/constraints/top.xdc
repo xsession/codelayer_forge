@@ -1,0 +1,6 @@
+set_property PACKAGE_PIN A1 [get_ports {uart_tx}]
+set_property IOSTANDARD LVCMOS33 [get_ports {uart_tx}]
+set_property PACKAGE_PIN A2 [get_ports {uart_rx}]
+set_property IOSTANDARD LVCMOS33 [get_ports {uart_rx}]
+set_property PACKAGE_PIN B1 [get_ports {status_led}]
+set_property IOSTANDARD LVCMOS33 [get_ports {status_led}]

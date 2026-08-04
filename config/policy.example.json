@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "pluginRoots": [
+    { "path": "plugins", "trust": "first-party", "enabled": true },
+    { "path": "${HOME}/.codelayer-forge/plugins", "trust": "user", "enabled": true }
+  ],
+  "allowedRuntimes": ["python", "wasm", "webview"],
+  "denyDuplicatePluginIds": true,
+  "permissions": {
+    "first-party": {
+      "workspace_read": true,
+      "workspace_write": true,
+      "network": false,
+      "serial": false,
+      "usb": false,
+      "spawn_processes": []
+    },
+    "user": {
+      "workspace_read": true,
+      "workspace_write": false,
+      "network": false,
+      "serial": false,
+      "usb": false,
+      "spawn_processes": []
+    }
+  },
+  "packageLimits": {
+    "maxFiles": 10000,
+    "maxUncompressedBytes": 268435456
+  }
+}

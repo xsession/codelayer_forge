@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "device": "demo.fpga-48",
+  "signals": [
+    {
+      "id": "uart_tx",
+      "requires": [
+        "UART_TX"
+      ]
+    },
+    {
+      "id": "uart_rx",
+      "requires": [
+        "UART_RX"
+      ]
+    },
+    {
+      "id": "status_led",
+      "requires": [
+        "GPIO"
+      ]
+    }
+  ],
+  "assignments": {
+    "uart_tx": "A1",
+    "uart_rx": "A2",
+    "status_led": "B1"
+  }
+}

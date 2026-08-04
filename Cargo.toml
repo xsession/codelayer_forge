@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/forge-protocol",
+  "crates/forge-core",
+  "crates/forge-cli",
+  "apps/desktop/src-tauri"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.88"
+authors = ["CodeLayer"]
+repository = "https://github.com/codelayer-hu/codelayer-forge"
+
+[workspace.dependencies]
+anyhow = "1.0.98"
+clap = { version = "4.5.41", features = ["derive"] }
+semver = { version = "1.0.26", features = ["serde"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+thiserror = "2.0.12"
+toml = "0.9.2"
+walkdir = "2.5.0"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }

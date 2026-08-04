@@ -1,0 +1,19 @@
+[package]
+name = "forge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "forge"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+forge-core = { path = "../forge-core" }
+forge-protocol = { path = "../forge-protocol" }
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

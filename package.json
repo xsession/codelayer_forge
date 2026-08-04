@@ -1,0 +1,24 @@
+{
+  "name": "@codelayer/forge-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CodeLayer Forge engineering workbench",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "catalog": "python3 scripts/build_catalog.py",
+    "verify": "python3 scripts/verify_repo.py",
+    "test": "python3 -m unittest discover -s tests -v",
+    "web:dev": "python3 -m http.server 4173 --directory apps/desktop/web",
+    "desktop:dev": "npm --workspace @codelayer/forge-desktop run tauri:dev",
+    "desktop:build": "npm --workspace @codelayer/forge-desktop run tauri:build",
+    "package:source": "python3 scripts/package_release.py",
+    "plugins:pack": "python3 scripts/pack_all_plugins.py"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

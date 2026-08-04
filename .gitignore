@@ -1,0 +1,27 @@
+# Build outputs
+node_modules/
+dist/
+target/
+*.pyc
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Local state
+.env
+.codelayer/cache/
+.codelayer/state/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/*.local.json
+.DS_Store
+Thumbs.db
+
+# Tauri bundles
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
