@@ -1,0 +1,7 @@
+workspace
+build
+*.egg-info
+
+embeddyn/__pycache__/
+
+.embeddyn/

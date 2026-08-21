@@ -1,0 +1,13 @@
+#VRML_SIM R2025a utf8
+WorldInfo { basicTimeStep 1 }
+Viewpoint { orientation -0.41 0.88 0.23 1.85 position 1.4 1.0 1.4 }
+TexturedBackground { }
+TexturedBackgroundLight { }
+Robot {
+  supervisor TRUE
+  controller "embeddyn_bridge"
+  children [
+    Shape { appearance PBRAppearance { baseColor 0.18 0.35 0.8 } geometry Cylinder { radius 0.08 height 0.18 } }
+  ]
+  physics Physics { mass 0.5 }
+}

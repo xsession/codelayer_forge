@@ -1,0 +1,6 @@
+adapter: renode
+bindings:
+  - signal: firmware.pwm_duty
+    endpoint: {adapter: renode, object: pwm0, property: duty_cycle, direction: output}
+  - signal: firmware.encoder_ticks
+    endpoint: {adapter: renode, object: encoder0, property: counter, direction: input}
