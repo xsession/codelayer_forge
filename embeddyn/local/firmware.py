@@ -39,6 +39,11 @@ except ImportError:  # pragma: no cover
 
 ASCII_RE = re.compile(rb"[\x20-\x7e]{4,}")
 UTF16LE_RE = re.compile(rb"(?:[\x20-\x7e]\x00){4,}")
+UF2_MAGIC_START0 = 0x0A324655
+UF2_MAGIC_START1 = 0x9E5D5157
+UF2_MAGIC_END = 0x0AB16F30
+UF2_BLOCK_SIZE = 512
+UF2_MAX_PAYLOAD = 476
 
 
 class FirmwareAnalyzer:
@@ -73,14 +78,14 @@ class FirmwareAnalyzer:
         left_data = Path(left).read_bytes()
         right_data = Path(right).read_bytes()
         maximum = max(len(left_data), len(right_data))
-        changed = []
+        changed_count = 0
         ranges = []
         range_start = None
         for offset in range(maximum):
             left_byte = left_data[offset] if offset < len(left_data) else None
             right_byte = right_data[offset] if offset < len(right_data) else None
             if left_byte != right_byte:
-                changed.append(offset)
+                changed_count += 1
                 if range_start is None:
                     range_start = offset
             elif range_start is not None:
@@ -91,8 +96,8 @@ class FirmwareAnalyzer:
         return {
             "left_size": len(left_data),
             "right_size": len(right_data),
-            "changed_bytes": len(changed),
-            "changed_ratio": len(changed) / maximum if maximum else 0.0,
+            "changed_bytes": changed_count,
+            "changed_ratio": changed_count / maximum if maximum else 0.0,
             "changed_ranges": ranges[:1000],
             "left_entropy": shannon_entropy(left_data),
             "right_entropy": shannon_entropy(right_data),
@@ -132,6 +137,8 @@ class FirmwareAnalyzer:
             ]
             symbols = []
             for section in elf.iter_sections():
+                if len(symbols) >= 5000:
+                    break
                 if not hasattr(section, "iter_symbols"):
                     continue
                 for symbol in section.iter_symbols():
@@ -180,8 +187,11 @@ class FirmwareAnalyzer:
 def detect_format(data: bytes, suffix: str = "") -> str:
     if data.startswith(b"\x7fELF"):
         return "ELF"
-    if len(data) >= 512 and data[:4] == b"UF2\n" and data[508:512] == b"0\nab":
-        return "UF2"
+    if len(data) >= UF2_BLOCK_SIZE:
+        magic0, magic1 = struct.unpack_from("<II", data, 0)
+        magic_end = struct.unpack_from("<I", data, UF2_BLOCK_SIZE - 4)[0]
+        if magic0 == UF2_MAGIC_START0 and magic1 == UF2_MAGIC_START1 and magic_end == UF2_MAGIC_END:
+            return "UF2"
     if data.lstrip().startswith(b":") and suffix.lower() in {".hex", ".ihex", ".ihx"}:
         return "Intel HEX"
     if data.startswith(b"S0") or data.startswith(b"S1") or suffix.lower() in {".srec", ".s19"}:
@@ -221,10 +231,18 @@ def hexdump(data: bytes, width: int = 16) -> str:
 
 def analyze_uf2(data: bytes) -> dict[str, Any]:
     blocks = []
-    for offset in range(0, len(data) - 511, 512):
-        block = data[offset:offset + 512]
-        magic0, magic1, flags, target, payload_size, block_no, block_count, family = struct.unpack_from("<IIIIIIII", block, 0)
-        if magic0 != 0x0A324655 or magic1 != 0x9E5D5157:
+    invalid_blocks = 0
+    for offset in range(0, len(data) - (UF2_BLOCK_SIZE - 1), UF2_BLOCK_SIZE):
+        block = data[offset:offset + UF2_BLOCK_SIZE]
+        magic0, magic1, flags, target, payload_size, block_no, block_count, family = struct.unpack_from(
+            "<IIIIIIII", block, 0
+        )
+        magic_end = struct.unpack_from("<I", block, UF2_BLOCK_SIZE - 4)[0]
+        if magic0 != UF2_MAGIC_START0 or magic1 != UF2_MAGIC_START1 or magic_end != UF2_MAGIC_END:
+            invalid_blocks += 1
+            continue
+        if payload_size > UF2_MAX_PAYLOAD:
+            invalid_blocks += 1
             continue
         blocks.append(
             {
@@ -238,6 +256,8 @@ def analyze_uf2(data: bytes) -> dict[str, Any]:
         )
     return {
         "block_count": len(blocks),
+        "invalid_blocks": invalid_blocks,
+        "trailing_bytes": len(data) % UF2_BLOCK_SIZE,
         "declared_block_count": max((block["block_count"] for block in blocks), default=0),
         "address_min": min((block["target_address"] for block in blocks), default=None),
         "address_max": max((block["target_address"] + block["payload_size"] for block in blocks), default=None),
@@ -249,9 +269,7 @@ def analyze_uf2(data: bytes) -> dict[str, Any]:
 def analyze_intel_hex(data: bytes) -> dict[str, Any]:
     upper = 0
     records = 0
-    ranges = []
-    current_start = None
-    current_end = None
+    intervals: list[tuple[int, int]] = []
     errors = []
     data_bytes = 0
     for line_no, raw_line in enumerate(data.decode("ascii", errors="replace").splitlines(), 1):
@@ -263,34 +281,46 @@ def analyze_intel_hex(data: bytes) -> dict[str, Any]:
             continue
         try:
             record = bytes.fromhex(line[1:])
+            if len(record) < 5:
+                raise ValueError("record too short")
             length = record[0]
+            if len(record) != length + 5:
+                errors.append(
+                    f"line {line_no}: record length mismatch (declared {length}, encoded {max(0, len(record) - 5)})"
+                )
+                continue
             address = int.from_bytes(record[1:3], "big")
             record_type = record[3]
             payload = record[4:4 + length]
             if sum(record) & 0xFF:
                 errors.append(f"line {line_no}: checksum mismatch")
-            if record_type == 0x04 and len(payload) == 2:
-                upper = int.from_bytes(payload, "big") << 16
-            elif record_type == 0x02 and len(payload) == 2:
-                upper = int.from_bytes(payload, "big") << 4
+            if record_type == 0x04:
+                if len(payload) != 2:
+                    errors.append(f"line {line_no}: invalid extended linear address record")
+                else:
+                    upper = int.from_bytes(payload, "big") << 16
+            elif record_type == 0x02:
+                if len(payload) != 2:
+                    errors.append(f"line {line_no}: invalid extended segment address record")
+                else:
+                    upper = int.from_bytes(payload, "big") << 4
+            elif record_type == 0x01 and payload:
+                errors.append(f"line {line_no}: EOF record must not contain data")
             elif record_type == 0x00:
                 data_bytes += len(payload)
                 absolute = upper + address
-                end = absolute + len(payload)
-                if current_start is None:
-                    current_start, current_end = absolute, end
-                elif absolute <= current_end:
-                    current_end = max(current_end, end)
-                else:
-                    ranges.append([current_start, current_end])
-                    current_start, current_end = absolute, end
+                intervals.append((absolute, absolute + len(payload)))
             records += 1
         except (ValueError, IndexError):
             errors.append(f"line {line_no}: invalid record")
-    if current_start is not None:
-        ranges.append([current_start, current_end])
-    return {"records": records, "data_bytes": data_bytes, "ranges": ranges, "errors": errors[:100]}
 
+    ranges: list[list[int]] = []
+    for start, end in sorted(intervals):
+        if not ranges or start > ranges[-1][1]:
+            ranges.append([start, end])
+        else:
+            ranges[-1][1] = max(ranges[-1][1], end)
+    return {"records": records, "data_bytes": data_bytes, "ranges": ranges, "errors": errors[:100]}
 
 def analyze_raw(data: bytes, architecture: str | None) -> dict[str, Any]:
     vectors = detect_vector_table(data, architecture)

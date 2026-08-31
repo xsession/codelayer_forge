@@ -5,3 +5,6 @@ build
 embeddyn/__pycache__/
 
 .embeddyn/
+
+# Local bootstrap environment (lock files are intentionally committed)
+.venv/

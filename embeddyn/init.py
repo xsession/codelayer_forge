@@ -8,7 +8,6 @@ import sys
 import typer
 import yaml
 
-import sys
 if sys.version_info >= (3, 11):
     from enum import StrEnum
 else:
@@ -17,11 +16,22 @@ else:
         pass
 from importlib.resources import files
 from pathlib import Path
+from dataclasses import replace
 from typing import Optional, Annotated
 from subprocess import CalledProcessError
 
 from embeddyn import env
 from embeddyn.utils import git_command, git_commit_sha
+from embeddyn.dependency_manager import (
+    DEFAULT_LOCK,
+    DEFAULT_MANIFEST,
+    DependencyError,
+    load_lock,
+    load_manifest,
+    projects_from_manifest,
+    save_lock,
+    sync_projects,
+)
 
 
 def search_for_zephyr_base(workspace):
@@ -49,7 +59,52 @@ def search_for_zephyr_base(workspace):
     return None
 
 
+def _managed_resources_context(workspace):
+    """Return manifest/lock context for resources when running from a source tree.
+
+    Wheels do not necessarily contain the repository-level bootstrap manifest, so
+    installed-package use retains the legacy clone fallback. In a source checkout
+    (the normal developer workflow) the frozen dependency lock is authoritative.
+    """
+    root = Path(__file__).resolve().parents[1]
+    manifest_path = root / DEFAULT_MANIFEST
+    if not manifest_path.exists():
+        return None
+    data = load_manifest(manifest_path)
+    projects = projects_from_manifest(data, root=root, names=["embeddyn-resources"])
+    if not projects:
+        return None
+    project = replace(projects[0], path=(Path(workspace) / "embeddyn-resources").resolve())
+    lock_path = root / DEFAULT_LOCK
+    return root, project, lock_path, load_lock(lock_path)
+
+
+def _sync_managed_resources(workspace, *, update=False):
+    context = _managed_resources_context(workspace)
+    if context is None:
+        return False
+    root, project, lock_path, lock_data = context
+    try:
+        lock_data, _ = sync_projects(
+            [project],
+            root=root,
+            lock_data=lock_data,
+            use_lock=True,
+            update=update,
+            force=False,
+            allow_bundled=True,
+        )
+        save_lock(lock_data, lock_path)
+    except DependencyError as error:
+        logging.error("Embeddyn resources dependency sync failed: %s", error)
+        sys.exit(1)
+    return True
+
+
 def get_embeddyn_resources(workspace):
+    if _sync_managed_resources(workspace, update=False):
+        return
+
     url = "https://github.com/antmicro/visual-system-designer-resources.git"
     dest = workspace / "embeddyn-resources"
 
@@ -65,6 +120,11 @@ def check_for_modified_files(repo):
     git_command(["diff-files", "--quiet"], repo=repo, error_msg=f"Some files in {repo} are modified. Please stash the changes before updating the repo.")
 
 def update_embeddyn_resources(workspace):
+    # In a source checkout, explicit update advances the manifest revision and
+    # rewrites embeddyn.lock.json. Normal init/sync never follows a moving branch.
+    if _sync_managed_resources(workspace, update=True):
+        return
+
     resources_repo = workspace / "embeddyn-resources"
     if not resources_repo.exists():
         get_embeddyn_resources(workspace)
@@ -94,7 +154,7 @@ def init_zephyr(workspace):
 
     init_zephyr_sh = files("embeddyn.scripts") / "init_zephyr.sh"
     try:
-        subprocess.run(["bash", "--", str(init_zephyr_sh), str(workspace), zephyr_version])
+        subprocess.check_call(["bash", "--", str(init_zephyr_sh), str(workspace), zephyr_version])
     except CalledProcessError as e:
         logging.error(f"Zephyr initialization failed. (exitcode: {e.returncode})")
         sys.exit(e.returncode)
@@ -129,7 +189,7 @@ def get_zephyr_sdk(sdk_version):
         return (dir / "sdk_version").read_text().strip()
 
     # If we have correct SDK version we don't need to install it again
-    if sdk_install_dir.exists() and sdk_version == read_sdk_version(sdk_install_dir):
+    if sdk_install_dir.exists() and (sdk_install_dir / "sdk_version").is_file() and sdk_version == read_sdk_version(sdk_install_dir):
         logging.info(f"Found Zephyr SDK v{sdk_version} in {sdk_install_dir}")
         return sdk_install_dir
 
@@ -178,12 +238,20 @@ def get_renode_portable(workspace):
 
     url = f"https://builds.renode.io/renode-{renode_version}.linux-portable-dotnet.tar.gz"
 
-    logging.info(f"Downloading {url} and extractingn into {portable_dir}")
+    logging.info(f"Downloading {url} and extracting into {portable_dir}")
 
-    # XXX: We prefer to do most of initialization in Python, but this operation is simpler when
-    #      it's done in shell. `tar` command is way easier to use than `tarfile` module in Python.
     os.makedirs(portable_dir, exist_ok=True)
-    subprocess.check_output(f"curl -sL {url} | tar xz --strip=1 -C {portable_dir}", shell=True)
+    archive = portable_dir / f".renode-download-{os.getpid()}.tar.gz"
+    try:
+        subprocess.check_call([
+            "curl", "--fail", "--silent", "--show-error", "--location",
+            url, "--output", str(archive),
+        ])
+        subprocess.check_call([
+            "tar", "xzf", str(archive), "--strip-components=1", "-C", str(portable_dir),
+        ])
+    finally:
+        archive.unlink(missing_ok=True)
 
     if not renode_portable.exists():
         logging.error("Renode portable wasn't downloaded.")

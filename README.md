@@ -9,6 +9,16 @@ For more background on Embeddyn and its goals, please read the [introductory blo
 
 The tool can also be used to generate and build [Zephyr RTOS](https://zephyrproject.org/)-based firmware and simulate it using [Renode](https://www.renode.io), Antmicro's open source simulation framework, visualizing the state of the simulation.
 
+## Documentation
+
+The complete documentation portal is [`docs/README.md`](docs/README.md). It is organized into three main tracks:
+
+- **[User guide](docs/user/README.md)** — installation, quick start, Local Studio, CLI, projects/data, mechatronics/HIL/digital twin, RF/EMC, and troubleshooting.
+- **[Contributor guide](docs/contributing/README.md)** — development setup, architecture, code ownership, testing, extension recipes, data migrations, security, and release/dependency policy.
+- **[C4 architecture](docs/c4/README.md)** — C1 system context, C2 containers, C3 components, dynamic workflows, deployment topologies, and architectural decisions/boundaries.
+
+The root [`CONTRIBUTING.md`](CONTRIBUTING.md) is a short discoverable entry point for contributors.
+
 
 ## Mechatronic co-simulation
 
@@ -19,6 +29,21 @@ embeddyn mechatronics run examples/mechatronics/dc-motor.yaml --mock
 ```
 
 See [the architecture](docs/mechatronics/ARCHITECTURE.md) and [quick start](docs/mechatronics/QUICKSTART.md).
+
+
+## RF / EMC simulation perspective
+
+Embeddyn Local Studio now includes an **RF / EMC** perspective for antenna tuning and generated-noise analysis. It can calculate a microstrip patch starting geometry from the PCB stack-up, generate a standalone openEMS full-wave model, inspect Touchstone S-parameters (S11, VSWR, impedance, return-loss bandwidth and first-order tuning guidance), close the geometry-tuning loop from the simulated/measured resonance, FFT simulated/session waveforms for switching harmonics, and apply custom engineering limit masks. The Studio view is an engineering cockpit with a scale-proportional antenna/stack-up drawing, workflow/status cards, project-level likely-noise-source hints, linked S11 and Smith-chart views, a log-frequency EMI spectrum with harmonic/mask markers, and stale-result warnings when analysis inputs change.
+
+```bash
+python bootstrap.py bootstrap --profile rf
+embeddyn rf status
+embeddyn rf patch-seed --target-hz 2.45e9 --epsilon-r 4.4 --substrate-mm 1.6
+embeddyn rf patch-openems-script patch_2450.py --target-hz 2.45e9 --epsilon-r 4.4 --substrate-mm 1.6
+embeddyn rf touchstone examples/rf/antenna_fixture.s1p --target-hz 2.45e9
+```
+
+See [RF / EMC simulation perspective](docs/RF_EMC_PERSPECTIVE.md) for the Studio workflow, openEMS integration, RF-noise limitations and recommended simulation-to-VNA/pre-compliance loop.
 
 ## Demo
 
@@ -53,15 +78,21 @@ NOTE: On Arch based systems additionally the `gtk-sharp` package must be install
 
 ## Setup
 
-To prepare project's environment and download necessary files, run:
+Embeddyn includes a west-like bootstrap/dependency manager. For the full Python and source dependency set:
 
+```bash
+python3 bootstrap.py bootstrap --profile full
+. ./.embeddyn/env.sh
 ```
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-embeddyn init workspace
-export EMBEDDYN_WORKSPACE=$(pwd)/workspace
+
+To also install Debian/Ubuntu host packages and initialize the complete Zephyr + SDK + Renode workspace:
+
+```bash
+python3 bootstrap.py bootstrap --profile full --install-system --workspace
+. ./.embeddyn/env.sh
 ```
+
+Dependency revisions are declared in `embeddyn.yml` and frozen in `embeddyn.lock.json`. Normal `sync` reproduces the lock; explicit `update` advances manifest revisions. See [Bootstrap and dependency versioning](docs/BOOTSTRAP_AND_DEPENDENCY_VERSIONING.md) for profiles, Windows launchers, source-archive handling and Python locking.
 
 ## Starting the Embeddyn application
 

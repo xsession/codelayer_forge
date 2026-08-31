@@ -4,6 +4,7 @@ import hashlib
 import json
 import mimetypes
 import os
+import uuid
 import shutil
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -43,9 +44,12 @@ class ContentAddressedStore:
         destination = self._object_path(digest_hex)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
-            temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}")
-            shutil.copyfile(source, temporary)
-            os.replace(temporary, destination)
+            temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}-{uuid.uuid4().hex}")
+            try:
+                shutil.copyfile(source, temporary)
+                os.replace(temporary, destination)
+            finally:
+                temporary.unlink(missing_ok=True)
         record = ArtifactRecord(
             digest=f"sha256:{digest_hex}",
             size=size,
@@ -63,9 +67,12 @@ class ContentAddressedStore:
         destination = self._object_path(digest_hex)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.exists():
-            temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}")
-            temporary.write_bytes(data)
-            os.replace(temporary, destination)
+            temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}-{uuid.uuid4().hex}")
+            try:
+                temporary.write_bytes(data)
+                os.replace(temporary, destination)
+            finally:
+                temporary.unlink(missing_ok=True)
         record = ArtifactRecord(
             digest=f"sha256:{digest_hex}",
             size=len(data),
@@ -106,9 +113,12 @@ class ContentAddressedStore:
         digest_hex = _normalize_digest(record.digest)
         path = self.metadata / f"{digest_hex}.json"
         if not path.exists():
-            temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
-            temporary.write_text(json.dumps(record.to_dict(), sort_keys=True, indent=2) + "\n", encoding="utf-8")
-            os.replace(temporary, path)
+            temporary = path.with_name(path.name + f".tmp-{os.getpid()}-{uuid.uuid4().hex}")
+            try:
+                temporary.write_text(json.dumps(record.to_dict(), sort_keys=True, indent=2) + "\n", encoding="utf-8")
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
 
 def _hash_file(path: Path, chunk_size: int = 1024 * 1024) -> tuple[str, int]:

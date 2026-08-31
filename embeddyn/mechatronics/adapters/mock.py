@@ -96,7 +96,9 @@ class MockFirmwareAdapter(SimulatorAdapter):
         actual = float(inputs.get("firmware.measured_velocity", 0.0))
         error = target - actual
         self.integral += error * step_seconds
-        duty = max(-1.0, min(1.0, 0.12 * error + 0.8 * self.integral))
+        kp = float(inputs.get("controller.kp", 0.12))
+        ki = float(inputs.get("controller.ki", 0.8))
+        duty = max(-1.0, min(1.0, kp * error + ki * self.integral))
         return StepResult({"firmware.pwm_duty": duty, "firmware.control_error": error})
 
     def checkpoint(self) -> object:

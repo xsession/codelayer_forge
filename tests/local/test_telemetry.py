@@ -22,3 +22,8 @@ async def test_hub_persists_and_streams(tmp_path):
     assert streamed["channel"] == "adc"
     stored = store.query_telemetry(session)
     assert stored[0]["value"] == 1.25
+
+
+def test_explicit_epoch_timestamp_is_preserved():
+    point = parse_telemetry_line("Embeddyn:adc=1", timestamp=0.0)
+    assert point.timestamp == 0.0

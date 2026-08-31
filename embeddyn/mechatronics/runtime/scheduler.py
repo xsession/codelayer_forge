@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable
+import math
 import time
 
 from ..model import Domain, SchedulerConfig
@@ -58,9 +59,11 @@ class MultiRateFixedStepScheduler(SchedulerStrategy):
         result: list[ScheduledActivation] = []
         for domain in self.order:
             step = self.config.step_for(domain)
-            count = max(1, int(round(macro / step)))
+            count = max(0, int(math.floor((macro + 1e-15) / step)))
             for index in range(1, count + 1):
-                result.append(ScheduledActivation(domain, macro_start + index * step, step))
+                activation_time = macro_start + index * step
+                if activation_time <= macro_end + 1e-15:
+                    result.append(ScheduledActivation(domain, activation_time, step))
         result.sort(key=lambda item: (round(item.time_seconds, 15), self._priority[item.domain]))
         return result
 

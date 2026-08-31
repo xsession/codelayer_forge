@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import ipaddress
 import secrets
 import stat
 from dataclasses import dataclass
@@ -20,6 +21,14 @@ class LocalConfig:
     port: int = 9010
     api_token: str | None = None
     allow_remote: bool = False
+
+    def __post_init__(self) -> None:
+        if not _is_loopback_host(self.host) and not self.allow_remote:
+            raise ValueError(
+                f"Refusing non-loopback Studio bind to {self.host!r}; pass --allow-remote explicitly"
+            )
+        if self.allow_remote and not (self.api_token or "").strip():
+            raise ValueError("Remote Studio requires a non-empty API token")
 
     @classmethod
     def from_env(
@@ -46,10 +55,15 @@ class LocalConfig:
 
         resolved_host = host or os.environ.get("EMBEDDYN_STUDIO_HOST") or os.environ.get("VSD_STUDIO_HOST", "127.0.0.1")
         resolved_port = int(port or os.environ.get("EMBEDDYN_STUDIO_PORT") or os.environ.get("VSD_STUDIO_PORT", "9010"))
-        remote = allow_remote or resolved_host not in {"127.0.0.1", "localhost", "::1"}
+        non_loopback = not _is_loopback_host(resolved_host)
+        if non_loopback and not allow_remote:
+            raise ValueError(
+                f"Refusing non-loopback Studio bind to {resolved_host!r}; pass --allow-remote explicitly"
+            )
+        remote = bool(allow_remote or non_loopback)
 
         data_path.mkdir(parents=True, exist_ok=True)
-        token = os.environ.get("EMBEDDYN_STUDIO_TOKEN") or os.environ.get("VSD_STUDIO_TOKEN")
+        token = (os.environ.get("EMBEDDYN_STUDIO_TOKEN") or os.environ.get("VSD_STUDIO_TOKEN") or "").strip() or None
         if remote and not token:
             token = _load_or_create_token(data_path / "studio.token")
 
@@ -63,11 +77,23 @@ class LocalConfig:
         )
 
 
+def _is_loopback_host(host: str) -> bool:
+    normalized = host.strip().strip("[]")
+    if normalized.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
 def _load_or_create_token(path: Path) -> str:
-    if path.exists():
-        return path.read_text(encoding="utf-8").strip()
-    token = secrets.token_urlsafe(32)
-    path.write_text(token + "\n", encoding="utf-8")
+    token = path.read_text(encoding="utf-8").strip() if path.exists() else ""
+    if not token:
+        token = secrets.token_urlsafe(32)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(token + "\n", encoding="utf-8")
+        temporary.replace(path)
     try:
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except OSError:

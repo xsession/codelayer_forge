@@ -51,12 +51,12 @@ class CoSimulationOrchestrator:
         rows: list[dict[str, Any]] = []
         self._event_writer = event_writer
         self._bus_writer = bus_writer
-        self.manager.start_all(self.values)
+        self.manager.start_all(self._adapter_inputs())
         try:
             if resume_from is not None:
                 self.restore(CheckpointManager.load(resume_from))
             macro = self.project.step_seconds
-            macro_count = int(math.ceil((self.project.duration_seconds - self.current_time) / macro))
+            macro_count = max(0, int(math.ceil((self.project.duration_seconds - self.current_time) / macro)))
             next_checkpoint = (
                 self.current_time + checkpoint_interval_seconds
                 if checkpoint_manager is not None and checkpoint_interval_seconds and checkpoint_interval_seconds > 0
@@ -66,7 +66,7 @@ class CoSimulationOrchestrator:
                 initial = self._row(self.current_time)
                 rows.append(initial)
                 if telemetry_writer is not None:
-                    telemetry_writer.append(initial)
+                    telemetry_writer.append(self._telemetry_row(self.current_time))
             for _ in range(macro_count):
                 macro_start = self.current_time
                 macro_end = min(macro_start + macro, self.project.duration_seconds)
@@ -77,7 +77,7 @@ class CoSimulationOrchestrator:
                 row = self._row(self.current_time)
                 rows.append(row)
                 if telemetry_writer is not None:
-                    telemetry_writer.append(row)
+                    telemetry_writer.append(self._telemetry_row(self.current_time))
                 if next_checkpoint is not None and self.current_time + 1e-15 >= next_checkpoint:
                     checkpoint_manager.save(self.current_time, self.snapshot())
                     next_checkpoint += checkpoint_interval_seconds
@@ -100,7 +100,7 @@ class CoSimulationOrchestrator:
         adapter = self.adapters.get(domain)
         if adapter is None:
             return
-        result = adapter.step(now, step_seconds, self.values)
+        result = adapter.step(now, step_seconds, self._adapter_inputs())
         self.activation_count[domain] += 1
         for name, value in result.outputs.items():
             signal = self.project.signals.get(name)
@@ -126,6 +126,17 @@ class CoSimulationOrchestrator:
             writer = getattr(self, "_event_writer", None)
             if writer is not None:
                 writer.append({"time_seconds": published.time_seconds, "topic": published.topic, "payload": published.payload, "source": published.source})
+
+    def _adapter_inputs(self) -> dict[str, Any]:
+        parameters = {name: quantity.value for name, quantity in self.project.parameters.items()}
+        return {**parameters, **self.values}
+
+    def _telemetry_row(self, now: float) -> dict[str, float]:
+        row: dict[str, float] = {"time": float(now)}
+        for name, signal in self.project.signals.items():
+            if signal.kind in {SignalKind.CONTINUOUS, SignalKind.DISCRETE}:
+                row[name] = float(self.values[name])
+        return row
 
     def _row(self, now: float) -> dict[str, Any]:
         row = {"time": now, **self.values}
@@ -171,9 +182,11 @@ class CoSimulationOrchestrator:
             self.values[coupling.target] = signal.clamp(value)
 
     def _delayed(self, signal: str, delay: int) -> float:
-        history = self.history[signal]
         if delay <= 0:
             return float(self.values[signal])
+        history = self.history.get(signal)
+        if history is None:
+            raise ValueError(f"signal {signal} does not support delayed coupling history")
         if len(history) <= delay:
             return history[0]
         return list(history)[-1 - delay]
@@ -186,7 +199,7 @@ class CoSimulationOrchestrator:
         return {
             "version": 1,
             "time_seconds": self.current_time,
-            "values": self.values,
+            "values": dict(self.values),
             "history": {name: list(values) for name, values in self.history.items()},
             "events": self.events.snapshot(),
             "adapters": self.manager.checkpoint(),
@@ -197,7 +210,13 @@ class CoSimulationOrchestrator:
         if int(state.get("version", 0)) != 1:
             raise ValueError("unsupported checkpoint version")
         self.current_time = float(state["time_seconds"])
-        self.values.update(dict(state["values"]))
+        if not math.isfinite(self.current_time) or self.current_time < 0 or self.current_time > self.project.duration_seconds + 1e-12:
+            raise ValueError("checkpoint time is outside the project duration")
+        restored_values = dict(state["values"])
+        unknown = set(restored_values) - set(self.values)
+        if unknown:
+            raise ValueError(f"checkpoint contains unknown signals: {', '.join(sorted(unknown))}")
+        self.values = {name: restored_values.get(name, current) for name, current in self.values.items()}
         for name, items in dict(state.get("history", {})).items():
             if name in self.history:
                 self.history[name].clear()

@@ -82,3 +82,15 @@ def test_mock_adapter_can_run_in_isolated_worker():
     adapters = build_adapters(project, mock=True, isolate=True)
     rows = CoSimulationOrchestrator(project, adapters).run()
     assert rows[-1]["time"] == 0.001
+
+
+def test_multirate_scheduler_never_emits_activation_past_partial_macro_end():
+    config = SchedulerConfig(
+        algorithm="multirate-fixed-step",
+        macro_step_seconds=0.001,
+        domain_steps={Domain.FIRMWARE: 0.001, Domain.ELECTRICAL: 0.0001},
+    )
+    activations = list(MultiRateFixedStepScheduler(config).activations(0.001, 0.00125))
+    assert activations
+    assert all(activation.time_seconds <= 0.00125 + 1e-15 for activation in activations)
+    assert all(activation.domain is not Domain.FIRMWARE for activation in activations)

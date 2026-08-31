@@ -191,3 +191,10 @@ show-changes:
       - results.json
     when: always
   allow_failure: true
+
+validate-docs:
+  <<: *common_only
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - python tools/check_docs.py

@@ -84,7 +84,7 @@ class DistributedCoordinator:
                 ON CONFLICT(worker_id) DO UPDATE SET
                     name=excluded.name, endpoint=excluded.endpoint,
                     capabilities_json=excluded.capabilities_json,
-                    status='online', last_seen_at=excluded.last_seen_at
+                    status='online', last_seen_at=excluded.last_seen_at, active_jobs=excluded.active_jobs
                 """,
                 (
                     worker.worker_id, worker.name, worker.endpoint,
@@ -111,13 +111,36 @@ class DistributedCoordinator:
                 raise KeyError(f"unknown worker: {worker_id}")
 
     def mark_stale_workers(self, timeout_seconds: float = 60.0) -> int:
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)).isoformat()
         with self._connect() as conn:
-            cursor = conn.execute(
-                "UPDATE distributed_workers SET status='offline' WHERE last_seen_at < ? AND status='online'",
+            conn.execute("BEGIN IMMEDIATE")
+            stale = conn.execute(
+                "SELECT worker_id FROM distributed_workers WHERE last_seen_at < ? AND status='online'",
                 (cutoff,),
-            )
-            return cursor.rowcount
+            ).fetchall()
+            now = utc_now()
+            for row in stale:
+                worker_id = row["worker_id"]
+                conn.execute(
+                    """UPDATE distributed_jobs
+                       SET status=?,completed_at=?
+                       WHERE assigned_worker_id=? AND status IN (?,?) AND cancellation_requested=1""",
+                    (JobStatus.CANCELLED.value, now, worker_id, JobStatus.CLAIMED.value, JobStatus.RUNNING.value),
+                )
+                conn.execute(
+                    """UPDATE distributed_jobs
+                       SET status=?,assigned_worker_id=NULL,claimed_at=NULL,started_at=NULL,
+                           error='requeued after worker heartbeat timeout'
+                       WHERE assigned_worker_id=? AND status IN (?,?) AND cancellation_requested=0""",
+                    (JobStatus.QUEUED.value, worker_id, JobStatus.CLAIMED.value, JobStatus.RUNNING.value),
+                )
+                conn.execute(
+                    "UPDATE distributed_workers SET status='offline',active_jobs=0 WHERE worker_id=?",
+                    (worker_id,),
+                )
+            return len(stale)
 
     def list_workers(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -200,6 +223,19 @@ class DistributedCoordinator:
     def fail_job(self, job_id: str, worker_id: str, error: str) -> None:
         self._finish_job(job_id, worker_id, JobStatus.FAILED, error=error)
 
+    def cancel_job(self, job_id: str, worker_id: str, result: dict[str, Any] | None = None) -> None:
+        self._finish_job(job_id, worker_id, JobStatus.CANCELLED, result=result)
+
+    def cancellation_requested(self, job_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT cancellation_requested,status FROM distributed_jobs WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        return bool(row["cancellation_requested"]) or row["status"] == JobStatus.CANCELLED.value
+
     def _finish_job(
         self,
         job_id: str,
@@ -255,6 +291,7 @@ class DistributedCoordinator:
                 conn.close()
 
     def list_jobs(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 10000))
         with self._connect() as conn:
             if status:
                 rows = conn.execute(
@@ -284,7 +321,29 @@ class DistributedCoordinator:
                 "SELECT status,COUNT(*) AS count FROM distributed_jobs WHERE experiment_id=? GROUP BY status",
                 (experiment_id,),
             ).fetchall()
+            jobs = {r["status"]: r["count"] for r in counts}
+            active = jobs.get(JobStatus.CLAIMED.value, 0) + jobs.get(JobStatus.RUNNING.value, 0)
+            if active:
+                derived = "running"
+            elif jobs.get(JobStatus.QUEUED.value, 0):
+                derived = "queued"
+            elif jobs.get(JobStatus.FAILED.value, 0):
+                derived = "failed"
+            elif jobs and jobs.get(JobStatus.CANCELLED.value, 0) == sum(jobs.values()):
+                derived = "cancelled"
+            elif jobs:
+                derived = "completed"
+            else:
+                derived = "queued"
+            completed_at = utc_now() if derived in {"completed", "failed", "cancelled"} and not row["completed_at"] else row["completed_at"]
+            if row["status"] != derived or row["completed_at"] != completed_at:
+                conn.execute(
+                    "UPDATE distributed_experiments SET status=?,completed_at=? WHERE experiment_id=?",
+                    (derived, completed_at, experiment_id),
+                )
             item = dict(row)
+            item["status"] = derived
+            item["completed_at"] = completed_at
             item["specification"] = json.loads(item.pop("specification_json"))
-            item["jobs"] = {r["status"]: r["count"] for r in counts}
+            item["jobs"] = jobs
             return item

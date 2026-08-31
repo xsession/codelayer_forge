@@ -17,9 +17,12 @@ def main() -> int:
     entry = root / "packaging" / "studio_entrypoint.py"
     separator = ";" if os.name == "nt" else ":"
     data_args = [
-        f"{root / 'vsd' / 'local' / 'static'}{separator}embeddyn/local/static",
-        f"{root / 'vsd' / 'local' / 'assets'}{separator}embeddyn/local/assets",
+        f"{root / 'embeddyn' / 'local' / 'static'}{separator}embeddyn/local/static",
+        f"{root / 'embeddyn' / 'local' / 'assets'}{separator}embeddyn/local/assets",
     ]
+    for source in (root / "embeddyn" / "local" / "static", root / "embeddyn" / "local" / "assets"):
+        if not source.is_dir():
+            raise FileNotFoundError(f"Required Studio resource directory is missing: {source}")
     command = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--onefile", "--console",

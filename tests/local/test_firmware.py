@@ -23,3 +23,53 @@ def test_intel_hex_detection(tmp_path):
     report = FirmwareAnalyzer().analyze(image)
     assert report["format"] == "Intel HEX"
     assert report["intel_hex"]["data_bytes"] == 4
+
+
+def _intel_hex_record(address: int, record_type: int, payload: bytes) -> str:
+    body = bytes([len(payload)]) + address.to_bytes(2, "big") + bytes([record_type]) + payload
+    checksum = (-sum(body)) & 0xFF
+    return ":" + (body + bytes([checksum])).hex().upper()
+
+
+def test_standard_uf2_detection_and_block_validation(tmp_path):
+    import struct
+
+    block = bytearray(512)
+    struct.pack_into(
+        "<IIIIIIII",
+        block,
+        0,
+        0x0A324655,
+        0x9E5D5157,
+        0,
+        0x20000000,
+        4,
+        0,
+        1,
+        0xE48BFF56,
+    )
+    block[32:36] = b"UF2!"
+    struct.pack_into("<I", block, 508, 0x0AB16F30)
+    image = tmp_path / "valid.uf2"
+    image.write_bytes(block)
+
+    report = FirmwareAnalyzer().analyze(image)
+    assert report["format"] == "UF2"
+    assert report["uf2"]["block_count"] == 1
+    assert report["uf2"]["invalid_blocks"] == 0
+    assert report["uf2"]["address_min"] == 0x20000000
+
+
+def test_intel_hex_ranges_are_order_independent_and_reject_bad_lengths(tmp_path):
+    image = tmp_path / "out-of-order.hex"
+    lines = [
+        _intel_hex_record(0x1000, 0x00, b"ABCD"),
+        _intel_hex_record(0x0000, 0x00, b"EFGH"),
+        ":04000000010203F6",  # Declares four payload bytes but encodes only three.
+        _intel_hex_record(0x0000, 0x01, b""),
+    ]
+    image.write_text("\n".join(lines) + "\n", encoding="ascii")
+    report = FirmwareAnalyzer().analyze(image)["intel_hex"]
+    assert report["ranges"] == [[0, 4], [0x1000, 0x1004]]
+    assert report["data_bytes"] == 8
+    assert any("length mismatch" in error for error in report["errors"])

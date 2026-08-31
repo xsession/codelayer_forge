@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,6 +18,7 @@ class LibraryDatabase:
     def connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         try:
             yield connection
             connection.commit()
@@ -84,6 +86,17 @@ class LibraryDatabase:
                 );
                 """
             )
+            db.execute("DELETE FROM entity_search")
+            rows = db.execute("SELECT id,name,vendor,category,description,metadata_json FROM entities").fetchall()
+            for row in rows:
+                metadata = json.loads(row["metadata_json"] or "{}")
+                aliases = metadata.get("aliases") or []
+                if not isinstance(aliases, list):
+                    aliases = []
+                db.execute(
+                    "INSERT INTO entity_search(entity_id,name,vendor,category,description,aliases) VALUES(?,?,?,?,?,?)",
+                    (row["id"], row["name"], row["vendor"] or "", row["category"] or "", row["description"] or "", " ".join(map(str, aliases))),
+                )
 
     def upsert_entity(self, *, entity_id: str, entity_type: str, name: str, vendor: str | None, category: str | None, description: str | None, source_id: str, metadata: dict[str, Any]) -> None:
         with self.connect() as db:
@@ -98,9 +111,13 @@ class LibraryDatabase:
                 """,
                 (entity_id, entity_type, name, vendor, category, description, source_id, json.dumps(metadata, sort_keys=True)),
             )
+            aliases = metadata.get("aliases") or []
+            if not isinstance(aliases, list):
+                aliases = []
+            db.execute("DELETE FROM entity_search WHERE entity_id = ?", (entity_id,))
             db.execute(
                 "INSERT INTO entity_search(entity_id, name, vendor, category, description, aliases) VALUES(?, ?, ?, ?, ?, ?)",
-                (entity_id, name, vendor or "", category or "", description or "", " ".join(metadata.get("aliases", []))),
+                (entity_id, name, vendor or "", category or "", description or "", " ".join(map(str, aliases))),
             )
 
     def stats(self) -> dict[str, Any]:
@@ -111,14 +128,23 @@ class LibraryDatabase:
         return {"entities": entities, "assets": assets, "graphs": graphs}
 
     def search(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 1000))
+        fts_query = _literal_fts_query(query)
         sql = (
-            "SELECT e.* FROM entities e JOIN entity_search s ON e.id = s.entity_id "
-            "WHERE entity_search MATCH ? LIMIT ?"
-            if query
+            "SELECT DISTINCT e.* FROM entities e JOIN entity_search s ON e.id = s.entity_id "
+            "WHERE entity_search MATCH ? ORDER BY e.name LIMIT ?"
+            if fts_query
             else "SELECT * FROM entities ORDER BY name LIMIT ?"
         )
-        values = (query, limit) if query else (limit,)
+        values = (fts_query, limit) if fts_query else (limit,)
         with self.connect() as db:
             rows = db.execute(sql, values).fetchall()
         return [dict(row) | {"metadata": json.loads(row["metadata_json"])} for row in rows]
+
+
+def _literal_fts_query(query: str) -> str:
+    # Treat UI search as literal terms, not raw FTS5 syntax. This prevents ordinary
+    # punctuation (quotes, colons, dashes) from turning into malformed MATCH input.
+    terms = re.findall(r"[\w.+-]+", query, flags=re.UNICODE)
+    return " ".join('"' + term.replace('"', '""') + '"' for term in terms)
 

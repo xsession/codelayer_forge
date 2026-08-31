@@ -20,6 +20,7 @@ from embeddyn.init import init, embeddyn_update_workspace, embeddyn_workspace_in
 from embeddyn.library.cli import library_app
 from embeddyn.local.cli import studio_app
 from embeddyn.mechatronics.cli import mechatronics_app
+from embeddyn.rf.cli import rf_app
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.command()(init)
@@ -28,6 +29,7 @@ app.command("update")(embeddyn_update_workspace)
 app.add_typer(library_app)
 app.add_typer(studio_app)
 app.add_typer(mechatronics_app)
+app.add_typer(rf_app)
 
 # The original Embeddyn commands depend on Git-pinned Pipeline Manager, dts2repl and
 # pyrenode packages. Keep them available in a full workspace without making

@@ -45,8 +45,17 @@ def run_project(
     isolate_adapters: bool = typer.Option(False, "--isolate-adapters", help="Run supported adapters in supervised child processes."),
     checkpoint_interval: Optional[float] = typer.Option(None, "--checkpoint-interval", help="Checkpoint interval in seconds."),
     resume_from: Optional[Path] = typer.Option(None, "--resume-from", exists=True, dir_okay=False),
+    parameter_overrides: Optional[str] = typer.Option(None, "--parameter-overrides", help="JSON object of resolved parameter overrides."),
 ) -> None:
     project = MechatronicProject.load(project_file)
+    if parameter_overrides:
+        try:
+            overrides = json.loads(parameter_overrides)
+        except json.JSONDecodeError as error:
+            raise typer.BadParameter(f"invalid --parameter-overrides JSON: {error}") from error
+        if not isinstance(overrides, dict):
+            raise typer.BadParameter("--parameter-overrides must decode to a JSON object")
+        project.apply_parameter_overrides(overrides, source="cli-override")
     compiler = ProjectCompiler()
     compiled = compiler.compile(project, output_root)
     writer = TelemetryWriter(compiled.directory / "signals" / "telemetry")

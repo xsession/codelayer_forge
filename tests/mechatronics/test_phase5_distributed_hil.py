@@ -89,3 +89,75 @@ def test_hil_watchdog_applies_safe_state():
     controller.arm()
     assert not controller.check_watchdog(controller.last_heartbeat + 0.2)
     assert controller.state == SafetyState.TRIPPED
+
+
+def test_stale_worker_requeues_claimed_job(tmp_path: Path):
+    coordinator = DistributedCoordinator(tmp_path / "metadata.sqlite3")
+    worker = WorkerRecord("worker-stale", "worker", "local://worker", WorkerCapabilities())
+    coordinator.register_worker(worker)
+    job = JobSpec("project.yaml")
+    coordinator.submit_job(job)
+    assert coordinator.claim_job(worker.worker_id)["status"] == "claimed"
+    with coordinator._connect() as connection:
+        connection.execute(
+            "UPDATE distributed_workers SET last_seen_at=? WHERE worker_id=?",
+            ("2000-01-01T00:00:00+00:00", worker.worker_id),
+        )
+    assert coordinator.mark_stale_workers(timeout_seconds=1.0) == 1
+    requeued = coordinator.get_job(job.job_id)
+    assert requeued["status"] == "queued"
+    assert requeued["assigned_worker_id"] is None
+    worker_state = coordinator.list_workers()[0]
+    assert worker_state["status"] == "offline"
+    assert worker_state["active_jobs"] == 0
+
+
+def test_worker_agent_passes_experiment_parameter_overrides(tmp_path: Path, monkeypatch):
+    from embeddyn.mechatronics.distributed import WorkerAgent
+    import embeddyn.mechatronics.distributed.agent as agent_module
+
+    coordinator = DistributedCoordinator(tmp_path / "metadata.sqlite3")
+    worker = WorkerRecord("worker-1", "worker", "local://worker", WorkerCapabilities())
+    coordinator.register_worker(worker)
+    job = JobSpec(
+        "project.yaml",
+        arguments={"mock": True, "parameter_overrides": {"controller.kp": 0.4, "controller.ki": 0.1}},
+    )
+    coordinator.submit_job(job)
+    captured = {}
+
+    class FakeProcess:
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+            self.returncode = 0
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(agent_module.subprocess, "Popen", FakeProcess)
+    result = WorkerAgent(coordinator, worker.worker_id, output_root=tmp_path / "runs").execute_once()
+    assert result["status"] == "completed"
+    command = captured["command"]
+    index = command.index("--parameter-overrides")
+    assert '"controller.kp":0.4' in command[index + 1]
+    assert command[:3] == [agent_module.sys.executable, "-m", "embeddyn"]
+
+
+def test_experiment_status_is_derived_from_jobs(tmp_path: Path):
+    coordinator = DistributedCoordinator(tmp_path / "metadata.sqlite3")
+    coordinator.register_experiment("exp-1", "experiment", {})
+    worker = WorkerRecord("worker-1", "worker", "local://worker", WorkerCapabilities())
+    coordinator.register_worker(worker)
+    job = JobSpec("project.yaml", experiment_id="exp-1")
+    coordinator.submit_job(job)
+    assert coordinator.experiment_status("exp-1")["status"] == "queued"
+    coordinator.claim_job(worker.worker_id)
+    coordinator.start_job(job.job_id, worker.worker_id)
+    assert coordinator.experiment_status("exp-1")["status"] == "running"
+    coordinator.complete_job(job.job_id, worker.worker_id, {})
+    status = coordinator.experiment_status("exp-1")
+    assert status["status"] == "completed"
+    assert status["completed_at"] is not None

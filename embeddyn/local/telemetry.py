@@ -66,7 +66,7 @@ def parse_telemetry_line(line: str, timestamp: float | None = None) -> Telemetry
     """
     import json
 
-    ts = timestamp or time.time()
+    ts = timestamp if timestamp is not None else time.time()
     stripped = line.strip()
     if stripped.startswith("EMBEDDYN_TELEMETRY ") or stripped.startswith("VSD_TELEMETRY "):
         try:

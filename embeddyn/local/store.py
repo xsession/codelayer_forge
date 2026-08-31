@@ -158,7 +158,12 @@ class LocalStore:
             )
 
     def import_component_library(self, path: str | Path) -> int:
-        return self.import_component_catalog(path) if Path(path).suffix.lower() == ".csv" else self.import_component_json(path)
+        suffix = Path(path).suffix.lower()
+        if suffix == ".csv":
+            return self.import_component_catalog(path)
+        if suffix == ".json":
+            return self.import_component_json(path)
+        raise ValueError(f"unsupported component library format: {suffix or '<none>'}")
 
     def import_component_catalog(self, csv_path: str | Path) -> int:
         path = csv_path if hasattr(csv_path, "open") else Path(csv_path)
@@ -238,7 +243,10 @@ class LocalStore:
     def _normalize_component_item(self, item: dict[str, Any], fallback_rank: int) -> tuple[Any, ...]:
         slug = self._first_string(item, "id", "slug", "name", "model", default=f"component-{fallback_rank}").lower().replace(" ", "-")
         kind = self._first_string(item, "kind", "category", "type", default="component").lower()
-        metadata = dict(item.get("metadata") or {})
+        raw_metadata = item.get("metadata") or {}
+        if not isinstance(raw_metadata, dict):
+            raise ValueError(f"component {slug!r} metadata must be an object")
+        metadata = dict(raw_metadata)
         metadata.update({"source": "designer-antmicro-library", "slug": slug})
         return (
             f"{kind}:{slug}",
@@ -317,6 +325,7 @@ class LocalStore:
         *,
         name: str | None = None,
         mime: str | None = None,
+        max_bytes: int | None = None,
     ) -> AssetRecord:
         temp_path = self.root / f".asset-{uuid.uuid4().hex}.tmp"
         digest = hashlib.sha256()
@@ -334,17 +343,23 @@ class LocalStore:
             input_handle = source
             close_input = False
         try:
-            with temp_path.open("wb") as output:
-                while True:
-                    chunk = input_handle.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    digest.update(chunk)
-                    output.write(chunk)
-                    size += len(chunk)
-        finally:
-            if close_input:
-                input_handle.close()
+            try:
+                with temp_path.open("wb") as output:
+                    while True:
+                        chunk = input_handle.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        size += len(chunk)
+                        if max_bytes is not None and size > max_bytes:
+                            raise ValueError(f"asset exceeds the {max_bytes} byte limit")
+                        digest.update(chunk)
+                        output.write(chunk)
+            finally:
+                if close_input:
+                    input_handle.close()
+        except BaseException:
+            temp_path.unlink(missing_ok=True)
+            raise
 
         sha256 = digest.hexdigest()
         destination = self.assets_root / sha256[:2] / sha256[2:4] / sha256
@@ -361,7 +376,7 @@ class LocalStore:
                 """
                 INSERT INTO assets(sha256, name, mime, size, stored_path, created_at)
                 VALUES(?, ?, ?, ?, ?, ?)
-                ON CONFLICT(sha256) DO UPDATE SET name=excluded.name, mime=excluded.mime
+                ON CONFLICT(sha256) DO NOTHING
                 """,
                 (sha256, asset_name, asset_mime, size, str(destination), created_at),
             )
@@ -589,7 +604,7 @@ class LocalStore:
                 """,
                 (
                     session_id,
-                    timestamp or time.time(),
+                    timestamp if timestamp is not None else time.time(),
                     level.upper(),
                     source,
                     message,

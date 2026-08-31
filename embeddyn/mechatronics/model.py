@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+import math
 from pathlib import Path
 from typing import Any
 
@@ -225,27 +226,50 @@ class MechatronicProject:
     def validate(self) -> None:
         if self.schema_version not in {1, 2}:
             raise ValueError(f"unsupported schema_version: {self.schema_version}")
-        if self.step_seconds <= 0:
-            raise ValueError("step_seconds must be positive")
-        if self.duration_seconds <= 0:
-            raise ValueError("duration_seconds must be positive")
+        if not math.isfinite(self.step_seconds) or self.step_seconds <= 0:
+            raise ValueError("step_seconds must be a finite positive number")
+        if not math.isfinite(self.duration_seconds) or self.duration_seconds <= 0:
+            raise ValueError("duration_seconds must be a finite positive number")
         if self.scheduler and self.scheduler.algorithm not in {"deterministic-fixed-step", "multirate-fixed-step", "real-time-fixed-step", "real-time-multirate"}:
             raise ValueError(f"unsupported scheduler algorithm: {self.scheduler.algorithm}")
+        if self.scheduler and (
+            not math.isfinite(self.scheduler.macro_step_seconds)
+            or not math.isclose(self.scheduler.macro_step_seconds, self.step_seconds, rel_tol=0.0, abs_tol=1e-15)
+        ):
+            raise ValueError("scheduler macro_step must match step_seconds")
         for domain, step in (self.scheduler.domain_steps if self.scheduler else {}).items():
-            if step <= 0:
-                raise ValueError(f"scheduler step for {domain.value} must be positive")
+            if not math.isfinite(step) or step <= 0:
+                raise ValueError(f"scheduler step for {domain.value} must be a finite positive number")
             ratio = self.step_seconds / step
             if abs(ratio - round(ratio)) > 1e-9:
                 raise ValueError(f"domain step for {domain.value} must divide macro step")
         if self.scheduler:
-            if self.scheduler.convergence.tolerance <= 0 or self.scheduler.convergence.max_iterations < 1:
+            if not math.isfinite(self.scheduler.convergence.tolerance) or self.scheduler.convergence.tolerance <= 0 or self.scheduler.convergence.max_iterations < 1:
                 raise ValueError("invalid scheduler convergence configuration")
             if self.scheduler.convergence.failure_policy not in {"error", "warn", "accept"}:
                 raise ValueError("unsupported convergence failure policy")
-            if self.scheduler.real_time.speed_factor <= 0:
-                raise ValueError("real-time speed_factor must be positive")
+            if not math.isfinite(self.scheduler.real_time.speed_factor) or self.scheduler.real_time.speed_factor <= 0:
+                raise ValueError("real-time speed_factor must be a finite positive number")
+            if not math.isfinite(self.scheduler.real_time.deadline_tolerance_seconds) or self.scheduler.real_time.deadline_tolerance_seconds < 0:
+                raise ValueError("real-time deadline_tolerance must be finite and non-negative")
             if self.scheduler.real_time.missed_deadline_policy not in {"continue", "warn", "abort"}:
                 raise ValueError("unsupported missed deadline policy")
+        for name, signal in self.signals.items():
+            if not math.isfinite(signal.initial):
+                raise ValueError(f"signal {name} initial value must be finite")
+            if signal.minimum is not None and not math.isfinite(signal.minimum):
+                raise ValueError(f"signal {name} minimum must be finite")
+            if signal.maximum is not None and not math.isfinite(signal.maximum):
+                raise ValueError(f"signal {name} maximum must be finite")
+            if signal.minimum is not None and signal.maximum is not None and signal.minimum > signal.maximum:
+                raise ValueError(f"signal {name} minimum exceeds maximum")
+            if signal.minimum is not None and signal.initial < signal.minimum:
+                raise ValueError(f"signal {name} initial value is below minimum")
+            if signal.maximum is not None and signal.initial > signal.maximum:
+                raise ValueError(f"signal {name} initial value is above maximum")
+        for name, quantity in self.parameters.items():
+            if not math.isfinite(quantity.value):
+                raise ValueError(f"parameter {name} must be finite")
         for name, instance in self.component_instances.items():
             definition = (instance or {}).get("definition")
             if definition and definition not in self.component_definitions:
@@ -257,10 +281,42 @@ class MechatronicProject:
                 raise ValueError(f"unknown coupling target: {coupling.target}")
             if coupling.delay_steps < 0:
                 raise ValueError("delay_steps cannot be negative")
+            if coupling.delay_steps and self.signals[coupling.source].kind not in {SignalKind.CONTINUOUS, SignalKind.DISCRETE}:
+                raise ValueError(f"delayed coupling source {coupling.source} must be continuous or discrete")
+            transform = coupling.transform
+            if transform.type not in {"identity", "affine", "clamp", "deadband", "quantize"}:
+                raise ValueError(f"unsupported coupling transform: {transform.type}")
+            for label, value in (("gain", transform.gain), ("offset", transform.offset), ("deadband", transform.deadband)):
+                if not math.isfinite(value):
+                    raise ValueError(f"coupling transform {label} must be finite")
+            if transform.deadband < 0:
+                raise ValueError("coupling transform deadband cannot be negative")
+            if transform.type == "quantize" and transform.gain <= 0:
+                raise ValueError("quantize transform requires gain/quantum > 0")
+            if transform.minimum is not None and not math.isfinite(transform.minimum):
+                raise ValueError("coupling transform minimum must be finite")
+            if transform.maximum is not None and not math.isfinite(transform.maximum):
+                raise ValueError("coupling transform maximum must be finite")
+            if transform.minimum is not None and transform.maximum is not None and transform.minimum > transform.maximum:
+                raise ValueError("coupling transform minimum exceeds maximum")
             source_unit = self.signals[coupling.source].unit
             target_unit = self.signals[coupling.target].unit
             if coupling.transform.type in {"identity", "clamp", "deadband"} and source_unit and target_unit and source_unit != target_unit:
                 raise ValueError(f"unit mismatch for {coupling.source} -> {coupling.target}: {source_unit} != {target_unit}")
+
+    def apply_parameter_overrides(self, overrides: dict[str, Any], *, source: str = "runtime-override") -> None:
+        for name, raw_value in overrides.items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("parameter override names must be non-empty strings")
+            existing = self.parameters.get(name)
+            default_unit = existing.unit if existing is not None else ""
+            quantity = Quantity.parse(raw_value, default_unit)
+            if not math.isfinite(quantity.value):
+                raise ValueError(f"parameter {name} must be finite")
+            self.parameters[name] = quantity
+            history = self.parameter_provenance.setdefault(name, [])
+            history.append({"source": source, "value": quantity.value, "unit": quantity.unit})
+        self.validate()
 
     def resolve(self, value: str | None) -> Path | None:
         if not value:

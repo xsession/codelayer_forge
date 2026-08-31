@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import sys
 import yaml
@@ -190,7 +191,7 @@ def determine_app_type(app: Path, app_template: str) -> Tuple[Path, str]:
         raise InitError("Exactly one of --app or --app-template must be specified")
 
     if app_template:
-        templates_dir = files('vsd.templates').joinpath("")
+        templates_dir = files('embeddyn.templates').joinpath("")
         default_path = templates_dir / "apps" / app_template
         if default_path.exists():
             return default_path, "template"
@@ -292,14 +293,20 @@ def _copy_build_images(board_name, build_dir, dst_dir):
             shutil.copy(src, dest)
 
 
-def compose_west_command(board_name, app_path, build_dir, boards_dir):
-    cmd = "west build -p"
-    cmd += f" -b {board_name}"
-    cmd += f" --build-dir {build_dir}"
-    cmd += f" {app_path}"
-    cmd += " --"
-    cmd += f" -DBOARD_ROOT={boards_dir.absolute()}"
-    return cmd
+def compose_west_args(board_name, app_path, build_dir, boards_dir) -> list[str]:
+    return [
+        "west", "build", "-p",
+        "-b", str(board_name),
+        "--build-dir", str(build_dir),
+        str(app_path),
+        "--",
+        f"-DBOARD_ROOT={Path(boards_dir).absolute()}",
+    ]
+
+
+def compose_west_command(board_name, app_path, build_dir, boards_dir) -> str:
+    """Return a shell-escaped command string for logs/manual execution only."""
+    return shlex.join(compose_west_args(board_name, app_path, build_dir, boards_dir))
 
 
 def ask_when_app_exists(app):
@@ -399,10 +406,10 @@ async def build_zephyr_async(board_name: str,
         shutil.rmtree(build_dir)
 
     os.makedirs(build_dir)
-    command = compose_west_command(board_name, app_path, build_dir, workspace)
+    command = compose_west_args(board_name, app_path, build_dir, workspace)
 
-    proc = await asyncio.create_subprocess_shell(
-        command,
+    proc = await asyncio.create_subprocess_exec(
+        *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT
     )

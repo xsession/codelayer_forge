@@ -58,3 +58,53 @@ couplings:
 """, encoding="utf-8")
     with pytest.raises(ValueError, match="unsafe coupling expressions"):
         MechatronicProject.load(project_file)
+
+
+def test_parameter_overrides_reach_runtime_and_manifest(tmp_path):
+    from embeddyn.mechatronics.factory import build_adapters
+    from embeddyn.mechatronics.orchestrator import CoSimulationOrchestrator
+
+    root = Path(__file__).resolve().parents[2]
+    default_project = MechatronicProject.load(root / "examples/mechatronics/dc-motor.yaml")
+    default_project.duration_seconds = 0.001
+    default_rows = CoSimulationOrchestrator(default_project, build_adapters(default_project, mock=True)).run()
+
+    overridden = MechatronicProject.load(root / "examples/mechatronics/dc-motor.yaml")
+    overridden.duration_seconds = 0.001
+    overridden.apply_parameter_overrides({"controller.kp": 0.0, "controller.ki": 0.0}, source="test")
+    override_rows = CoSimulationOrchestrator(overridden, build_adapters(overridden, mock=True)).run()
+    assert default_rows[-1]["firmware.pwm_duty"] != override_rows[-1]["firmware.pwm_duty"]
+    assert override_rows[-1]["firmware.pwm_duty"] == 0.0
+
+    compiled = ProjectCompiler().compile(overridden, tmp_path / "runs")
+    manifest = json.loads(compiled.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["resolved_parameters"]["controller.kp"]["value"] == 0.0
+    assert manifest["resolved_parameters"]["controller.kp"]["provenance"][-1]["source"] == "test"
+
+
+def test_project_validation_rejects_non_finite_and_inconsistent_scheduler(tmp_path):
+    nan_project = tmp_path / "nan.yaml"
+    nan_project.write_text("""
+name: bad
+step_seconds: .nan
+duration_seconds: 1
+signals: {}
+couplings: []
+simulators: {}
+""", encoding="utf-8")
+    with pytest.raises(ValueError, match="finite positive"):
+        MechatronicProject.load(nan_project)
+
+    inconsistent = tmp_path / "inconsistent.yaml"
+    inconsistent.write_text("""
+name: bad-scheduler
+step_seconds: 1 ms
+scheduler:
+  macro_step: 2 ms
+duration_seconds: 10 ms
+signals: {}
+couplings: []
+simulators: {}
+""", encoding="utf-8")
+    with pytest.raises(ValueError, match="macro_step must match"):
+        MechatronicProject.load(inconsistent)

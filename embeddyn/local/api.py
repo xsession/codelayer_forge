@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import time
+from contextlib import asynccontextmanager
 from importlib.resources import files
 from dataclasses import asdict
 from pathlib import Path
@@ -20,6 +22,18 @@ from .firmware import FirmwareAnalyzer
 from .models import TelemetryPoint
 from .store import LocalStore
 from .telemetry import TelemetryHub
+from embeddyn.rf import (
+    RFAnalysisError,
+    analyze_touchstone,
+    analyze_waveform_noise,
+    load_waveform_csv,
+    RectangularPatchSpec,
+    rectangular_patch_seed,
+    render_openems_patch_script,
+    resolved_patch_geometry,
+    solver_capabilities,
+    waveform_from_points,
+)
 
 
 class ProjectPayload(BaseModel):
@@ -60,6 +74,70 @@ class FilterPipelinePayload(BaseModel):
     pipeline: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class RFPatchPayload(BaseModel):
+    target_frequency_hz: float = Field(gt=0)
+    dielectric_constant: float = Field(gt=1.0)
+    substrate_thickness_m: float = Field(gt=0)
+    loss_tangent: float = Field(default=0.002, ge=0, le=1)
+    reference_impedance_ohms: float = Field(default=50.0, gt=0)
+    width_m: float | None = Field(default=None, gt=0)
+    length_m: float | None = Field(default=None, gt=0)
+    feed_offset_m: float | None = None
+    sweep_span_hz: float | None = Field(default=None, gt=0)
+    sweep_points: int = Field(default=401, ge=51, le=5001)
+
+    def as_spec(self) -> RectangularPatchSpec:
+        return RectangularPatchSpec(
+            target_frequency_hz=self.target_frequency_hz,
+            dielectric_constant=self.dielectric_constant,
+            substrate_thickness_m=self.substrate_thickness_m,
+            loss_tangent=self.loss_tangent,
+            reference_impedance_ohms=self.reference_impedance_ohms,
+            width_m=self.width_m,
+            length_m=self.length_m,
+            feed_offset_m=self.feed_offset_m,
+            sweep_span_hz=self.sweep_span_hz,
+            sweep_points=self.sweep_points,
+        )
+
+
+class RFTouchstonePayload(BaseModel):
+    asset_id: int
+    target_frequency_hz: float | None = Field(default=None, gt=0)
+    return_loss_threshold_db: float = Field(default=10.0, gt=0)
+    reference_impedance_ohms: float | None = Field(default=None, gt=0)
+
+
+class RFNoiseLimitPoint(BaseModel):
+    frequency_hz: float = Field(gt=0)
+    limit: float
+    unit: str = "dBuV"
+
+
+class RFNoiseAssetPayload(BaseModel):
+    asset_id: int
+    sample_rate_hz: float | None = Field(default=None, gt=0)
+    time_column: str | None = None
+    value_column: str | None = None
+    value_unit: str = "V"
+    impedance_ohms: float = Field(default=50.0, gt=0)
+    max_fft_points: int = Field(default=16384, ge=8, le=65536)
+    top_peaks: int = Field(default=20, ge=1, le=200)
+    limit_mask: list[RFNoiseLimitPoint] = Field(default_factory=list)
+
+
+class RFNoiseSessionPayload(BaseModel):
+    session_id: str
+    channel: str = Field(min_length=1, max_length=200)
+    since: float | None = None
+    until: float | None = None
+    value_unit: str = "V"
+    impedance_ohms: float = Field(default=50.0, gt=0)
+    max_fft_points: int = Field(default=16384, ge=8, le=65536)
+    top_peaks: int = Field(default=20, ge=1, le=200)
+    limit_mask: list[RFNoiseLimitPoint] = Field(default_factory=list)
+
+
 def create_app(config: LocalConfig | None = None) -> FastAPI:
     config = config or LocalConfig.from_env()
     store = LocalStore(config.data_dir)
@@ -69,11 +147,19 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
     emulation = EmulationManager(store, telemetry)
     analyzer = FirmwareAnalyzer()
 
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        try:
+            yield
+        finally:
+            await emulation.stop_all()
+
     app = FastAPI(
         title="Embeddyn Local Studio",
         version="1.0.0",
         docs_url="/api/docs",
         redoc_url=None,
+        lifespan=lifespan,
     )
     app.state.config = config
     app.state.store = store
@@ -84,32 +170,42 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
     static_dir = files("embeddyn.local.static")
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-    async def require_token(authorization: str | None = Header(default=None)) -> None:
+    def token_is_valid(authorization: str | None) -> bool:
         if not config.api_token:
-            return
-        if authorization != f"Bearer {config.api_token}":
-            raise HTTPException(status_code=401, detail="A valid local studio token is required")
+            return True
+        prefix = "Bearer "
+        if not authorization or not authorization.startswith(prefix):
+            return False
+        supplied = authorization[len(prefix):]
+        return secrets.compare_digest(supplied, config.api_token)
 
-    @app.on_event("shutdown")
-    async def stop_processes() -> None:
-        await emulation.stop_all()
+    async def require_token(authorization: str | None = Header(default=None)) -> None:
+        if not token_is_valid(authorization):
+            raise HTTPException(status_code=401, detail="A valid local studio token is required")
 
     @app.get("/", include_in_schema=False)
     async def root() -> FileResponse:
         return FileResponse(static_dir.joinpath("index.html"))
 
     @app.get("/api/health")
-    async def health() -> dict[str, Any]:
-        return {
+    async def health(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        base = {
             "status": "ok",
             "local_only": not config.allow_remote,
+            "auth_required": bool(config.api_token),
+            "authenticated": token_is_valid(authorization),
+        }
+        if config.api_token and not base["authenticated"]:
+            return base
+        return {
+            **base,
             "data_dir": str(config.data_dir),
             "workspace": str(config.workspace),
             "catalog": store.component_stats(),
             "toolchain": emulation.toolchain.as_dict(),
         }
 
-    @app.get("/api/components")
+    @app.get("/api/components", dependencies=[Depends(require_token)])
     async def components(
         query: str = "",
         kind: str | None = None,
@@ -122,21 +218,37 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
             query, kind=kind, bus=bus, tier=tier, limit=limit, offset=offset
         )]
 
-    @app.get("/api/components/stats")
+    @app.get("/api/components/stats", dependencies=[Depends(require_token)])
     async def component_stats() -> dict[str, Any]:
         return store.component_stats()
 
     @app.post("/api/components/import", dependencies=[Depends(require_token)])
     async def import_components(file: UploadFile = File(...)) -> dict[str, Any]:
-        suffix = Path(file.filename or "").suffix or ".json"
+        suffix = Path(file.filename or "").suffix.lower() or ".json"
+        if suffix not in {".json", ".csv"}:
+            raise HTTPException(status_code=400, detail="Component libraries must be .json or .csv")
         imports_dir = config.data_dir / "imports"
         imports_dir.mkdir(parents=True, exist_ok=True)
         path = imports_dir / f"component-library-{int(time.time() * 1000)}{suffix}"
-        content = await file.read()
-        if not content:
-            raise HTTPException(status_code=400, detail="Uploaded component library is empty")
-        path.write_bytes(content)
-        imported = await asyncio.to_thread(store.import_component_library, path)
+        size = 0
+        try:
+            with path.open("wb") as output:
+                while chunk := await file.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > 16 * 1024 * 1024:
+                        raise HTTPException(status_code=413, detail="Component library exceeds the 16 MiB limit")
+                    output.write(chunk)
+            if not size:
+                raise HTTPException(status_code=400, detail="Uploaded component library is empty")
+            try:
+                imported = await asyncio.to_thread(store.import_component_library, path)
+            except (ValueError, KeyError, json.JSONDecodeError) as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        finally:
+            path.unlink(missing_ok=True)
         return {"imported": imported, "catalog": store.component_stats()}
 
     @app.get("/api/bundled-assets")
@@ -165,30 +277,34 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
 
     @app.post("/api/assets", dependencies=[Depends(require_token)])
     async def upload_asset(file: UploadFile = File(...)) -> dict[str, Any]:
-        record = await asyncio.to_thread(
-            store.put_asset,
-            file.file,
-            name=file.filename or "asset.bin",
-            mime=file.content_type,
-        )
+        try:
+            record = await asyncio.to_thread(
+                store.put_asset,
+                file.file,
+                name=file.filename or "asset.bin",
+                mime=file.content_type,
+                max_bytes=512 * 1024 * 1024,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=413, detail=str(error)) from error
         return _asset_json(record)
 
-    @app.get("/api/assets")
+    @app.get("/api/assets", dependencies=[Depends(require_token)])
     async def assets(limit: int = Query(default=100, ge=1, le=1000)) -> list[dict[str, Any]]:
         return [_asset_json(record) for record in store.list_assets(limit)]
 
-    @app.get("/api/assets/{asset_id}")
+    @app.get("/api/assets/{asset_id}", dependencies=[Depends(require_token)])
     async def download_asset(asset_id: int) -> FileResponse:
         record = store.get_asset(asset_id)
         if not record or not record.stored_path.exists():
             raise HTTPException(status_code=404, detail="Asset not found")
         return FileResponse(record.stored_path, filename=record.name, media_type=record.mime)
 
-    @app.get("/api/projects")
+    @app.get("/api/projects", dependencies=[Depends(require_token)])
     async def projects() -> list[dict[str, Any]]:
         return store.list_projects()
 
-    @app.get("/api/projects/{project_id}")
+    @app.get("/api/projects/{project_id}", dependencies=[Depends(require_token)])
     async def project(project_id: str) -> dict[str, Any]:
         record = store.get_project(project_id)
         if not record:
@@ -213,11 +329,108 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
         analysis_id = store.save_analysis(asset.id, payload.architecture, report)
         return {"id": analysis_id, "asset_id": asset.id, "report": report}
 
-    @app.get("/api/toolchain")
+
+
+    @app.get("/api/rf/capabilities", dependencies=[Depends(require_token)])
+    async def rf_capabilities() -> dict[str, Any]:
+        return await asyncio.to_thread(solver_capabilities)
+
+
+    @app.post("/api/rf/patch/seed", dependencies=[Depends(require_token)])
+    async def rf_patch_seed(payload: RFPatchPayload) -> dict[str, Any]:
+        try:
+            geometry = await asyncio.to_thread(resolved_patch_geometry, payload.as_spec())
+        except RFAnalysisError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return geometry
+
+    @app.post("/api/rf/patch/openems-script", dependencies=[Depends(require_token)])
+    async def rf_patch_openems_script(payload: RFPatchPayload) -> dict[str, Any]:
+        try:
+            spec = payload.as_spec()
+            geometry = await asyncio.to_thread(resolved_patch_geometry, spec)
+            script = await asyncio.to_thread(render_openems_patch_script, spec)
+        except RFAnalysisError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return {"filename": "embeddyn_openems_patch.py", "geometry": geometry, "script": script}
+
+    @app.post("/api/rf/touchstone/analyze", dependencies=[Depends(require_token)])
+    async def rf_touchstone_analyze(payload: RFTouchstonePayload) -> dict[str, Any]:
+        asset = store.get_asset(payload.asset_id)
+        if not asset:
+            raise HTTPException(status_code=404, detail="RF asset not found")
+        try:
+            report = await asyncio.to_thread(
+                analyze_touchstone,
+                asset.stored_path,
+                target_frequency_hz=payload.target_frequency_hz,
+                return_loss_threshold_db=payload.return_loss_threshold_db,
+                reference_impedance_ohms=payload.reference_impedance_ohms,
+                filename_hint=asset.name,
+            )
+        except RFAnalysisError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        report["source"] = asset.name
+        return report
+
+    @app.post("/api/rf/noise/asset", dependencies=[Depends(require_token)])
+    async def rf_noise_asset(payload: RFNoiseAssetPayload) -> dict[str, Any]:
+        asset = store.get_asset(payload.asset_id)
+        if not asset:
+            raise HTTPException(status_code=404, detail="Waveform asset not found")
+        try:
+            waveform = await asyncio.to_thread(
+                load_waveform_csv,
+                asset.stored_path,
+                time_column=payload.time_column,
+                value_column=payload.value_column,
+                sample_rate_hz=payload.sample_rate_hz,
+                value_unit=payload.value_unit,
+            )
+            report = await asyncio.to_thread(
+                analyze_waveform_noise,
+                waveform,
+                impedance_ohms=payload.impedance_ohms,
+                max_fft_points=payload.max_fft_points,
+                top_peaks=payload.top_peaks,
+                limit_mask=[point.model_dump() for point in payload.limit_mask],
+            )
+        except RFAnalysisError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        report["source"] = asset.name
+        return report
+
+    @app.post("/api/rf/noise/session", dependencies=[Depends(require_token)])
+    async def rf_noise_session(payload: RFNoiseSessionPayload) -> dict[str, Any]:
+        if not store.get_session(payload.session_id):
+            raise HTTPException(status_code=404, detail="Session not found")
+        points = store.query_telemetry(
+            payload.session_id,
+            channels=[payload.channel],
+            since=payload.since,
+            until=payload.until,
+            limit=200000,
+        )
+        try:
+            waveform = waveform_from_points(points, value_unit=payload.value_unit)
+            report = await asyncio.to_thread(
+                analyze_waveform_noise,
+                waveform,
+                impedance_ohms=payload.impedance_ohms,
+                max_fft_points=payload.max_fft_points,
+                top_peaks=payload.top_peaks,
+                limit_mask=[point.model_dump() for point in payload.limit_mask],
+            )
+        except RFAnalysisError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        report["source"] = {"session_id": payload.session_id, "channel": payload.channel}
+        return report
+
+    @app.get("/api/toolchain", dependencies=[Depends(require_token)])
     async def toolchain() -> dict[str, str | None]:
         return emulation.toolchain.as_dict()
 
-    @app.get("/api/sessions")
+    @app.get("/api/sessions", dependencies=[Depends(require_token)])
     async def sessions(limit: int = Query(default=100, ge=1, le=1000)) -> list[dict[str, Any]]:
         return store.list_sessions(limit)
 
@@ -252,7 +465,7 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
         now = time.time()
         points = [
             TelemetryPoint(
-                timestamp=point.timestamp or now,
+                timestamp=point.timestamp if point.timestamp is not None else now,
                 channel=point.channel,
                 value=point.value,
                 kind=point.kind,
@@ -262,10 +475,10 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
         ]
         return {"inserted": await telemetry.publish(session_id, points)}
 
-    @app.get("/api/sessions/{session_id}/telemetry")
+    @app.get("/api/sessions/{session_id}/telemetry", dependencies=[Depends(require_token)])
     async def query_telemetry(
         session_id: str,
-        channel: list[str] = Query(default=[]),
+        channel: list[str] | None = Query(default=None),
         since: float | None = None,
         until: float | None = None,
         limit: int = Query(default=10000, ge=1, le=200000),
@@ -287,7 +500,7 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
         except (UnsafeFilterExpression, ValueError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    @app.get("/api/logs")
+    @app.get("/api/logs", dependencies=[Depends(require_token)])
     async def logs(
         session_id: str | None = None,
         level: str | None = None,
@@ -302,10 +515,13 @@ def create_app(config: LocalConfig | None = None) -> FastAPI:
     @app.websocket("/ws/telemetry/{session_id}")
     async def telemetry_socket(websocket: WebSocket, session_id: str) -> None:
         if config.api_token:
-            token = websocket.query_params.get("token")
-            if token != config.api_token:
+            token = websocket.query_params.get("token") or ""
+            if not secrets.compare_digest(token, config.api_token):
                 await websocket.close(code=4401)
                 return
+        if not store.get_session(session_id):
+            await websocket.close(code=4404)
+            return
         await websocket.accept()
         queue = await telemetry.subscribe(session_id)
         try:

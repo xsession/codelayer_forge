@@ -23,6 +23,19 @@ Embeddyn combines all implemented Phase 1-6 capabilities into one engineering pl
 - isolated adapter workers
 - real-time pacing, deadline monitoring, and HIL-oriented safety hooks
 
+## RF / EMC engineering
+- dedicated Local Studio RF / EMC perspective
+- built-in Touchstone S-parameter parser and S11/return-loss/VSWR/impedance analysis
+- antenna resonance and return-loss bandwidth detection
+- analytical rectangular microstrip patch seed from target frequency, dielectric constant and substrate thickness
+- generated standalone openEMS full-wave patch model with S1P, impedance summary and principal-plane far-field export
+- first-order resonant-path scaling and series-reactance tuning hints, with a Studio action to apply the S11 length correction
+- FFT of CSV or live simulation telemetry for switching-harmonic/RF-noise inspection
+- dBV/dBuV/dBm spectral metrics with configurable reference impedance
+- sample-rate/Nyquist/timing-jitter diagnostics and custom engineering limit masks
+- optional scikit-rf network analysis dependency
+- version-managed recursive openEMS source integration, CLI build helper, generated trusted model workflow, and safe native XML solver runner
+
 ## Engineering integrations
 - Renode firmware emulation
 - Webots mechanical simulation bridge

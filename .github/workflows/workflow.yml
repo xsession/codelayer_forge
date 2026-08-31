@@ -18,12 +18,15 @@ jobs:
           sudo apt-get -qqy autoremove
           sudo apt-get -qqy install npm libarchive-tools curl git cmake ninja-build gperf ccache dfu-util device-tree-compiler wget xz-utils file make gcc gcc-multilib g++-multilib libsdl2-dev
 
-      - name: Prepare workspace
+      - name: Prepare workspace with Embeddyn bootstrap
         run: |
           echo "progress=dot:giga" > ${HOME}/.wgetrc
-          pip install -e .
-          embeddyn init workspace
+          python bootstrap.py bootstrap --profile core --workspace --skip-doctor
+          echo "$(pwd)/.venv/bin" >> $GITHUB_PATH
           echo "EMBEDDYN_WORKSPACE=$(pwd)/workspace" >> $GITHUB_ENV
+
+      - name: Verify frozen dependency state
+        run: python bootstrap.py status --profile core
 
       - name: Build and run demo
         run: |
