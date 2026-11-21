@@ -149,6 +149,7 @@ class MechatronicProject:
     parameter_provenance: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     component_definitions: dict[str, dict[str, Any]] = field(default_factory=dict)
     component_instances: dict[str, dict[str, Any]] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path) -> "MechatronicProject":
@@ -219,6 +220,7 @@ class MechatronicProject:
             parameter_provenance=provenance,
             component_definitions=definitions,
             component_instances=instances,
+            metrics=dict(raw.get("metrics") or {}),
         )
         project.validate()
         return project
@@ -226,6 +228,12 @@ class MechatronicProject:
     def validate(self) -> None:
         if self.schema_version not in {1, 2}:
             raise ValueError(f"unsupported schema_version: {self.schema_version}")
+        if self.metrics:
+            from .metrics import parse_metric_specs
+            for spec in parse_metric_specs(self.metrics).values():
+                for name in (spec.signal, spec.target if isinstance(spec.target, str) else None):
+                    if name and name not in self.signals:
+                        raise ValueError(f"metric {spec.name} references unknown signal {name}")
         if not math.isfinite(self.step_seconds) or self.step_seconds <= 0:
             raise ValueError("step_seconds must be a finite positive number")
         if not math.isfinite(self.duration_seconds) or self.duration_seconds <= 0:

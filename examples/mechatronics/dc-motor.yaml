@@ -40,3 +40,8 @@ couplings:
   - {source: mechanical.velocity, target: electrical.back_emf, gain: 0.08, delay_steps: 1}
   - {source: electrical.motor_current, target: mechanical.motor_torque, gain: 0.08}
   - {source: mechanical.velocity, target: firmware.measured_velocity, delay_steps: 1}
+
+metrics:
+  speed: {type: step_response, signal: mechanical.velocity, target: firmware.target_velocity, settling_band: 0.02}
+  current: {type: stats, signal: electrical.motor_current}
+  energy: {type: integral, signal: electrical.input_power}

@@ -12,6 +12,7 @@ from .factory import build_adapters
 from .kicad import KiCadBridge
 from .catalog import ComponentCatalog
 from .integration import validate_integrations
+from .metrics import compute_metrics, parse_metric_specs, select_metrics
 from .model import MechatronicProject
 from .orchestrator import CoSimulationOrchestrator
 from .runtime import CheckpointManager, verify_replay
@@ -101,6 +102,9 @@ def run_project(
         csv_export = None
         if output is not None:
             csv_export = export_telemetry_csv(writer.path, output.resolve())
+        metrics = compute_metrics(rows, parse_metric_specs(project.metrics)) if project.metrics else {}
+        if metrics:
+            (compiled.directory / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
         compiler.update_status(
             compiled,
             "completed",
@@ -113,6 +117,7 @@ def run_project(
             },
             csv_export=str(csv_export) if csv_export else None,
             steps=len(rows),
+            metrics=metrics,
             runtime={
                 "activation_count": {domain.value: count for domain, count in runtime.activation_count.items()},
                 "isolated_adapters": isolate_adapters,
@@ -133,9 +138,49 @@ def run_project(
         "database": str(compiled.database_path),
         "manifest": str(compiled.manifest_path),
         "final": rows[-1] if rows else {},
+        "metrics": metrics,
         "activation_count": {domain.value: count for domain, count in runtime.activation_count.items()},
         "isolated_adapters": isolate_adapters,
     }, indent=2))
+
+
+@mechatronics_app.command("metrics")
+def metrics_command(
+    project_file: Path = typer.Argument(..., exists=True, dir_okay=False),
+    run_csv: Path = typer.Argument(..., exists=True, dir_okay=False, help="CSV from `run --output`."),
+) -> None:
+    """Compute the project's declared metrics from an exported run CSV."""
+    import csv as _csv
+    project = MechatronicProject.load(project_file)
+    with run_csv.open(newline="", encoding="utf-8") as handle:
+        rows = [{key: float(value) for key, value in row.items() if value not in ("", None)}
+                for row in _csv.DictReader(handle)]
+    typer.echo(json.dumps(compute_metrics(rows, parse_metric_specs(project.metrics)), indent=2, sort_keys=True))
+
+
+@mechatronics_app.command("tune")
+def tune_command(
+    spec_file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Tuning spec (YAML)."),
+    output: Path = typer.Option(Path(".embeddyn/tuning/result.json"), "--output", "-o"),
+    max_evaluations: Optional[int] = typer.Option(None, "--max-evaluations"),
+) -> None:
+    """Tune project parameters by repeated co-simulation (bounded Nelder-Mead)."""
+    from .tuning import load_tuning_spec, tune, write_result
+    spec = load_tuning_spec(spec_file)
+    if max_evaluations is not None:
+        spec.max_evaluations = max_evaluations
+
+    def progress(record):
+        values = ", ".join(f"{name}={value:.5g}" for name, value in record["parameters"].items())
+        note = record.get("error") or "; ".join(record["violations"]) or "ok"
+        typer.echo(f"[{record['evaluation']:3d}] objective={record['objective']:.6g}  {values}  ({note}, {record['seconds']} s)", err=True)
+
+    result = tune(spec, progress)
+    write_result(result, output)
+    typer.echo(json.dumps({"output": str(output), "evaluations": result["evaluations"], "feasible": result["feasible"],
+                           "initial": {"parameters": result["initial"]["parameters"], "objective": result["initial"]["objective"]},
+                           "best": {key: result["best"][key] for key in ("parameters", "objective", "violations")}},
+                          indent=2, default=lambda value: None))
 
 
 @mechatronics_app.command("validate")

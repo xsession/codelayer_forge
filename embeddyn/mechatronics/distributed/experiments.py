@@ -71,6 +71,8 @@ def expand_experiment(raw: dict[str, Any], source_path: Path | None = None) -> E
         arguments = dict(base_arguments)
         arguments["parameter_overrides"] = overrides
         arguments["experiment_index"] = index
+        if raw.get("metrics"):
+            arguments["metrics"] = [str(name) for name in raw["metrics"]]
         jobs.append(JobSpec(
             project_path=project_path,
             arguments=arguments,

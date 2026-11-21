@@ -1,0 +1,42 @@
+// Minimal STM32F4 platform for the DC-motor co-simulation example.
+// Self-contained so the example does not depend on the full stm32f4.repl,
+// which in the custom-cores branch references peripherals (STM32_RNG) its
+// src/Infrastructure does not provide. Unmapped register accesses (RCC etc.)
+// only produce warnings.
+
+sram: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x00040000
+
+flash: Memory.MappedMemory @ sysbus 0x08000000
+    size: 0x200000
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    priorityMask: 0xF0
+    systickFrequency: 72000000
+    IRQ -> cpu@0
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m4"
+    nvic: nvic
+
+gpioPortA: GPIOPort.STM32_GPIOPort @ sysbus <0x40020000, +0x400>
+    modeResetValue: 0xA8000000
+    outputSpeedResetValue: 0x0C000000
+    pullUpPullDownResetValue: 0x64000000
+    numberOfAFs: 16
+
+// TIM1: 10 MHz input clock; channel 1 output drives PA8 (AF1).
+timer1: Timers.STM32_Timer @ sysbus 0x40010000
+    BreakInterrupt -> nvic@24
+    UpdateInterrupt -> nvic@25
+    [TriggerInterrupt, CommutationInterrupt] -> nvic@[26, 26]
+    CaptureCompareInterrupt -> nvic@27
+    frequency: 10000000
+    initialLimit: 0xFFFF
+
+timer1:
+    0 -> gpioPortA#08@01
+
+// ADC1, driven over External Control (needs the STM32_ADC IADC patch).
+adc1: Analog.STM32_ADC @ sysbus 0x40012000
+    IRQ -> nvic@18

@@ -16,6 +16,7 @@ using Antmicro.Renode.Exceptions;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals.Bus;
 using Antmicro.Renode.Peripherals.DMA;
+using Antmicro.Renode.Peripherals.Sensor;
 using Antmicro.Renode.Peripherals.Sensors;
 
 namespace Antmicro.Renode.Peripherals.Analog
@@ -46,7 +47,7 @@ namespace Antmicro.Renode.Peripherals.Analog
     //                          If false, third watchdog threshold configuration register will live under this register's offset.
     //
     // * - Feature is either partially implemented, or not at all.
-    public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral
+    public abstract class STM32_ADC_Common : IADC, IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral
     {
         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel = 0, IDMA dmaPeripheral = null,
             int? watchdogCount = null, bool? hasCalibration = null, int? channelCount = null, bool? hasPrescaler = null,
@@ -148,6 +149,26 @@ namespace Antmicro.Renode.Peripherals.Analog
                 sampleProvider[i].DefaultSample.Value = valueInmV;
             }
         }
+
+        // IADC: lets External Control / co-simulation clients drive a channel.
+        // Values are in microvolts (the IADC/RESD convention) and become the
+        // channel's default sample, so every later conversion returns them
+        // (converted with the configured resolution and reference voltage)
+        // until changed. Queued samples from FeedVoltageSampleToChannel still
+        // take precedence while any remain.
+        public void SetADCValue(int channel, uint value)
+        {
+            ValidateChannel(channel);
+            sampleProvider[channel].DefaultSample.Value = value / 1000m;
+        }
+
+        public uint GetADCValue(int channel)
+        {
+            ValidateChannel(channel);
+            return (uint)Math.Round(sampleProvider[channel].DefaultSample.Value * 1000m);
+        }
+
+        public int ADCChannelCount => ChannelCount;
 
         public void Reset()
         {

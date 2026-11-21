@@ -95,10 +95,15 @@ class MockFirmwareAdapter(SimulatorAdapter):
         target = float(inputs.get("firmware.target_velocity", 5.0))
         actual = float(inputs.get("firmware.measured_velocity", 0.0))
         error = target - actual
-        self.integral += error * step_seconds
         kp = float(inputs.get("controller.kp", 0.12))
         ki = float(inputs.get("controller.ki", 0.8))
-        duty = max(-1.0, min(1.0, kp * error + ki * self.integral))
+        candidate = self.integral + error * step_seconds
+        raw = kp * error + ki * candidate
+        duty = max(-1.0, min(1.0, raw))
+        # controller.anti_windup = 1: conditional integration (freeze the
+        # integrator while the output saturates), as in the reference firmware.
+        if not (float(inputs.get("controller.anti_windup", 0.0)) and raw != duty):
+            self.integral = candidate
         return StepResult({"firmware.pwm_duty": duty, "firmware.control_error": error})
 
     def checkpoint(self) -> object:

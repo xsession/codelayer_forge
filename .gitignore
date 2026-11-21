@@ -8,3 +8,8 @@ embeddyn/__pycache__/
 
 # Local bootstrap environment (lock files are intentionally committed)
 .venv/
+
+# Example firmware build outputs
+examples/mechatronics/firmware/*.elf
+examples/mechatronics/firmware/*/build/
+__pycache__/

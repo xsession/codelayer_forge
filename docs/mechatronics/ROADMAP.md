@@ -1,0 +1,171 @@
+# Roadmap: whole-system emulation and tuning
+
+**Goal:** emulate, test and fine-tune a complete embedded product (firmware,
+electronics and mechanics) as one deterministic, repeatable simulation, and
+close the loop with bench measurements.
+
+*Written 2026-11-21 from a review of the repository at that date.*
+
+## Where we are
+
+| Area | State | Notes |
+|------|-------|-------|
+| Project model (signals, units, couplings, delays) | ✅ solid | one YAML describes the system |
+| Orchestrator / scheduler | ✅ solid | deterministic fixed-step and multi-rate, iterative coupling, checkpoints |
+| Storage, telemetry, distributed workers, HIL safety, twin analytics | ✅ baseline | good foundations, mostly exercised with mocks |
+| **Firmware: Renode** | 🟢 works end to end on real Renode | custom-cores build, reference STM32 firmware, closed loop validated ([RENODE.md](RENODE.md)) |
+| **Electrical: ngspice (libngspice)** | 🟢 works with carried state | `ngspice-shared` backend, switching H-bridge example, closed loop with Renode firmware ([NGSPICE.md](NGSPICE.md)); LTspice and the per-step `ngspice` backend remain batch-only |
+| Mechanical: Webots | 🔴 Webots physics unused | reference controller computes the plant in Python; 0.5 ms step is rounded to 1 ms of Webots time |
+| Python plant models, thermal domain | 🟢 works | `backend: python` for any domain; geared drivetrain and winding thermal models ([TUNING.md](TUNING.md)) |
+| Multiple simulators per domain / FMU | 🔴 missing | one adapter per domain (five domains now usable) |
+| Tuning (metrics, optimiser, parameter estimation) | 🟡 metrics + optimiser work | `mechatronics tune` (bounded Nelder–Mead over full co-simulations); parameter estimation still affine only |
+| Studio UI for co-simulation | 🔴 missing | no API/UI to run or plot mechatronics runs |
+
+Firmware runs for real in Renode and electronics in ngspice; the mechanical domain still runs only as a built-in model.
+
+## Phase R1: real firmware in the loop (Renode)
+
+*Status: in progress.*
+
+Done:
+- [x] Pin `renode-source` to the `custom-cores` branch of `xsession/renode`
+  (`embeddyn.yml`, `embeddyn.lock.json`, `.gitmodules`).
+- [x] Pure-Python External Control client covering RunFor, GetTime,
+  GetMachine, ADC, GPIOPort (with edge events) and SystemBus.
+- [x] `RenodeAdapter`: integer-µs virtual time aligned to co-simulation time,
+  optional Renode launch, binding kinds `gpio_duty`, `gpio_state`, `sysbus`,
+  `register_ratio`, `adc`, `gpio`.
+- [x] `IADC` for `STM32_ADC` (patch in `externals/patches/renode-infrastructure`).
+- [x] Example project `dc-motor-renode.yaml`, `.resc`, bindings;
+  `integration-validate` checks for Renode.
+- [x] Byte-compatible fake server and closed-loop tests.
+
+- [x] Build the branch on the host (`tools/renode/build-custom-cores.sh`,
+  user-local .NET 8, no Docker) and validate on real Renode: protocol, ADC
+  patch, timer PWM edge events, closed loop (`test_renode_real.py`), CLI run.
+- [x] Reference firmware `examples/mechatronics/firmware/motor-speed-control`
+  (bare-metal, `arm-none-eabi-gcc`), with run-time calibration in RAM.
+  Interrupt + `WFI` paced by default (about 10× less CPU than polling);
+  the earlier "interrupt never taken" problem was a missing `DSB; ISB`,
+  reproduced identically on upstream Renode.
+- [x] CI job `.github/workflows/renode-cosim.yml`: builds Renode (cached),
+  builds the firmware, runs `test_renode_real.py` with a golden-trace check.
+  Not yet run on GitHub.
+- [x] `IADC` for the `STM32_ADC_Common` family (F0/F3/G0/WBA/H7), patch 0002,
+  verified on a real build. Still open: the custom cores' own ADCs.
+- [x] `STM32_Timer` PWM dropout at `CCR = ARR` fixed (patch 0003); the real
+  firmware now matches the mock controller's speed to within 0.04 rad/s.
+- [x] `float32` sysbus bindings; `RENODE_BIN`; `variables` (e.g. quantum);
+  fail fast on `.resc` errors.
+
+Next:
+- [ ] **Fix the fork so it builds as-is**: align `src/Infrastructure` and `lib/*`
+  pins with the top-level `build.sh`/`Renode.sln`, and commit the small
+  source fixes (see the table in [RENODE.md](RENODE.md#building-the-custom-cores-branch)).
+  Then the build script reduces to clone + `./build.sh`.
+- [ ] Commit the patches in `externals/patches/renode-infrastructure` (ADC 0001,
+  0002; timer 0003) to `xsession/renode-infrastructure`.
+- [ ] Make the branch's STM32 platform files load: `stm32f4.repl` needs
+  `STM32_RNG`, `stm32g0.repl` an `STM32SPI` constructor that matches.
+- [ ] Replace the bundled `externals/renode` copy with the managed checkout,
+  `python bootstrap.py update renode-source --adopt`, or make it a real
+  submodule. Push the patches to the fork first.
+- [ ] Checkpoints via Renode `Save`/`Load`. Needs a fork change: External
+  Control can't trigger them, and `Load` replaces the server the adapter talks
+  to (see Limits in [RENODE.md](RENODE.md#limits)).
+- [ ] Bus-level signals (UART/SPI/I²C/CAN) through a Renode-side plugin, for
+  sensor ICs and comms stacks.
+
+## Phase R2: electronics with state (ngspice shared library)
+
+*Status: core done.*
+
+- [x] `NgspiceSharedAdapter` (`backend: ngspice-shared`) on libngspice via
+  ctypes: one transient for the whole run, `stop when` + `resume` per step,
+  `GetSyncData` lands each step exactly on co-simulation time.
+- [x] Inputs through `external` sources (zero-order hold) and `alter`;
+  outputs as `V()`/`I()` vectors, per step `mean`/`rms`/`min`/`max`/`last`.
+- [x] Switching H-bridge example (`circuits/motor-hbridge.cir`, 20 kHz PWM,
+  DC link, current sense) and `dc-motor-full.yaml`: real firmware in Renode +
+  H-bridge in ngspice.
+- [ ] Gate drive, dead time and MOSFET/diode models in the bridge.
+- [ ] `.save`-based vector filtering so long runs don't keep every point.
+- [ ] KiCad-to-SPICE round trip using the existing `KiCadBridge`.
+- [ ] Keep LTspice for offline validation runs only (it is batch-only).
+
+## Phase R3: flexible system topology and FMI
+
+- [ ] Simulators as **named instances** (`mcu0`, `driver`, `plant`, `thermal`, …),
+  each with a backend, instead of three fixed domains. Couplings stay signal-based.
+- [ ] `FmuAdapter` (FMI 2/3 co-simulation via `fmpy`): brings in Modelica,
+  OpenModelica, Simulink and 20-sim plant models.
+- [x] Python model adapter (`backend: python`, RK4 sub-stepping, checkpoints) with
+  built-in `GearedDrivetrain` (backlash, compliance, Stribeck friction,
+  encoder) and `ThermalRC`; `thermal`/`environment` domains built by the factory.
+- [ ] Fix the Webots bridge: drive real motors and sensors through the
+  Supervisor API, require `basicTimeStep` to divide the co-simulation step,
+  and use Webots only where contacts or 3D matter.
+- [ ] Shared physical constants: declare `Kt`/`Ke` once instead of copying
+  them into coupling gains.
+- [ ] Integer-tick time base in the orchestrator (no accumulated float time).
+
+## Phase R4: fine-tuning loop
+
+- [x] Response metrics (settling/rise/peak time, overshoot, steady-state
+  error, IAE/ISE/ITAE, peak/RMS/mean, integrals) declared per project,
+  computed after every run and recorded on sweep jobs.
+- [x] `mechatronics tune`: deterministic bounded Nelder–Mead over full
+  co-simulations with weighted objectives and constraints.
+- [ ] Optimiser jobs on the distributed-worker system (parallel evaluations),
+  CMA-ES / Bayesian methods.
+- [ ] Physical parameter estimation from bench traces (R, L, Kt, J, friction),
+  replacing per-signal affine calibration for model fitting.
+- [ ] Monte-Carlo tolerance runs over component spread, reusing the
+  uncertainty module, with yield and requirements reports.
+- [x] Firmware parameter injection at run time (`float32` sysbus binding into
+  the firmware's `motor_cal` struct), so tuning doesn't need a rebuild.
+  Optimiser jobs can now vary `kp`/`ki` in the real firmware.
+
+## Phase R5: usability
+
+- [ ] Studio: run, compare and plot mechatronics runs; edit signal bindings.
+- [ ] `embeddyn mechatronics doctor` checks the Renode build, ngspice library
+  and Webots versions.
+- [ ] Docker image with Renode (custom-cores), ngspice and Webots for
+  reproducible CI and offline use.
+- [ ] HIL step: replace an emulated domain with real hardware through the
+  existing HIL safety layer.
+
+## Remaining features, consolidated
+
+*Collected 2026-11-21 from every plan in the repository: this roadmap,
+`INTEGRATION_PLAN.md`, `ARCHITECTURE.md`, `ARCHITECTURE_AND_PARAMETER_STORAGE.md`
+and the "remaining work" sections of the phase changelogs/completion notes,
+checked against the code.* Order is the build order: each group unblocks the next.
+
+| # | Feature | Source | State |
+|---|---------|--------|-------|
+| 1 | ✅ Response metrics (settling/rise time, overshoot, steady-state error, IAE/ITAE, peak/RMS current, energy) computed after every run and per sweep job | R4; `pid-sweep.yaml` declares them | done: `metrics:` in projects, `metrics.json` per run |
+| 2 | ✅ Optimiser over parameters (firmware gains, design values) against weighted metrics and constraints | R4 | done: `mechatronics tune` (serial evaluations) |
+| 3 | ✅ Python plant models with sub-stepping; a drivetrain library (rotor, gearbox with backlash and compliance, Coulomb/Stribeck friction, load, encoder) | R3; ARCHITECTURE "mechanical domain" | done: `backend: python`, `plants.py` |
+| 4 | Named simulator instances (several per domain; thermal/environment domains, which the enum already has but the factory ignores) | R3; spec §3.5, §4.3 | partial: thermal/environment domains usable, still one adapter per domain |
+| 5 | FMI 2/3 co-simulation import (`fmpy`) and export | R3; INTEGRATION_PLAN 5 | missing |
+| 6 | Verification checks: energy balance, step-size convergence, scenario matrices | INTEGRATION_PLAN 7 | golden traces only |
+| 7 | Physical parameter estimation from bench traces (R, L, Kt, J, friction) with confidence intervals | R4; PHASE6 next steps | affine calibration only |
+| 8 | Monte Carlo tolerance runs through the experiment queue; sensitivity / Sobol analysis | R4; PHASE6 | sampling only, not executed |
+| 9 | Renode sensor/bus signals: quadrature encoder, UART/SPI/I²C/CAN frames, fault injection | R1; INTEGRATION_PLAN 4 | missing |
+| 10 | Renode fork fixes upstreamed (pins, patches 0001–0003, platform files), checkpoints via Save/Load | R1 | patches local only |
+| 11 | ngspice: gate drive/dead time/MOSFET models, `.save` filtering, KiCad round trip | R2; INTEGRATION_PLAN 6 | missing |
+| 12 | Webots bridge using real physics (Supervisor motors/sensors, timestep alignment) | R3 | reference controller computes the plant itself |
+| 13 | Shared physical constants (`Kt`/`Ke` once); integer-tick time base | R3 | missing |
+| 14 | Studio UI for co-simulation runs, plots, binding editor | R5; INTEGRATION_PLAN 2 | missing |
+| 15 | `mechatronics doctor`, Docker image, HIL step with real hardware | R5; INTEGRATION_PLAN 8 | missing (HIL safety layer exists) |
+| 16 | Storage: override layers, PostgreSQL, telemetry range queries, retention/GC, bundle import/export, run recovery, backups | PHASE2 remaining | missing |
+| 17 | Twin: live streaming sync, clock-drift estimation, HTML/PDF and signed evidence reports | PHASE6 next steps | missing |
+
+## Housekeeping
+
+- Fix git's "dubious ownership" error on the repository directory:
+  `git config --global --add safe.directory <repo>`.
+- `externals/` holds about 16k vendored files; prefer real submodules or
+  bootstrap-managed checkouts.

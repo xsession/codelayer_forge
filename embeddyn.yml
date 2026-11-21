@@ -76,7 +76,7 @@
         "name": "renode-source",
         "path": "externals/renode",
         "url": "https://github.com/xsession/renode.git",
-        "revision": "HEAD",
+        "revision": "custom-cores",
         "groups": [
           "tools"
         ],

@@ -87,8 +87,20 @@ def validate_project_bindings(project: MechatronicProject) -> dict[str, Any]:
         if path is None or not path.exists():
             reports.append({"domain": domain.value, "path": str(path), "errors": ["binding file does not exist"]})
             continue
-        manifest = BindingManifest.load(path)
         backend = str(config.options.get("backend", domain.value))
+        if backend == "ngspice-shared":
+            from .adapters.ngspice_shared import load_ngspice_bindings
+            try:
+                spice = load_ngspice_bindings(path)
+                known = set(project.signals) | set(project.parameters)
+                errors = [f"ngspice binding for unknown signal: {b.signal}"
+                          for b in [*spice.inputs, *spice.outputs] if b.signal not in known]
+                count = len(spice.inputs) + len(spice.outputs)
+            except (OSError, ValueError) as exc:
+                errors, count = [str(exc)], 0
+            reports.append({"domain": domain.value, "path": str(path), "bindings": count, "errors": errors})
+            continue
+        manifest = BindingManifest.load(path)
         reports.append({"domain": domain.value, "path": str(path), "bindings": len(manifest.bindings), "errors": manifest.validate(project, backend)})
     errors = [error for report in reports for error in report.get("errors", [])]
     return {"valid": not errors, "reports": reports, "errors": errors}
