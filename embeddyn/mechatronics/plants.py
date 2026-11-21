@@ -18,7 +18,8 @@ class GearedDrivetrain:
 
     inputs = ("motor_torque", "load_torque")
     outputs = ("motor_angle", "motor_speed", "motor_acceleration", "load_angle", "load_speed",
-               "shaft_torque", "friction_torque", "encoder_count", "backlash_contact")
+               "shaft_torque", "friction_torque", "encoder_count", "backlash_contact",
+               "dissipated_power", "stored_energy")
     states = ("motor_angle", "motor_speed", "load_angle", "load_speed")
 
     def __init__(self, motor_inertia: float = 0.002, motor_damping: float = 1e-4, gear_ratio: float = 10.0,
@@ -65,11 +66,25 @@ class GearedDrivetrain:
         load_acc = (shaft - self._friction(x[3]) - u.get("load_torque", 0.0)) / self.jl
         return [x[1], motor_acc, x[3], load_acc]
 
+    def _energy(self, x: Sequence[float]) -> tuple[float, float]:
+        """(dissipated power, stored energy) for energy-balance checks."""
+        shaft, contact = self._shaft(x)
+        rate = x[1] / self.n - x[3]
+        twist = x[0] / self.n - x[2]
+        compression = twist - math.copysign(self.backlash / 2, twist) if contact else 0.0
+        damper = self.c * rate * rate if contact and shaft != 0.0 else 0.0
+        gear_loss = (1 / self.eta - 1) * shaft * x[1] / self.n if shaft * x[1] > 0 else 0.0
+        dissipated = self.bm * x[1] ** 2 + self._friction(x[3]) * x[3] + damper + gear_loss
+        stored = 0.5 * self.jm * x[1] ** 2 + 0.5 * self.jl * x[3] ** 2 + 0.5 * self.k * compression ** 2
+        return dissipated, stored
+
     def output(self, t: float, x: Sequence[float], u: Mapping[str, float]) -> dict[str, float]:
         shaft, contact = self._shaft(x)
         derivative = self.derivatives(t, x, u)
         counts = math.floor(x[2] / (2 * math.pi) * self.cpr) if self.cpr else 0
+        dissipated, stored = self._energy(x)
         return {
+            "dissipated_power": dissipated, "stored_energy": stored,
             "motor_angle": x[0], "motor_speed": x[1], "motor_acceleration": derivative[1],
             "load_angle": x[2], "load_speed": x[3], "shaft_torque": shaft,
             "friction_torque": self._friction(x[3]), "encoder_count": float(counts),

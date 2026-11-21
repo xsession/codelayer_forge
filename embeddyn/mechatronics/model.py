@@ -174,6 +174,7 @@ class MechatronicProject:
     metrics: dict[str, Any] = field(default_factory=dict)
     instances: dict[str, SimulatorConfig] = field(default_factory=dict)
     declares_instances: bool = False
+    verification: dict[str, Any] = field(default_factory=dict)
 
     def declared_instances(self) -> dict[str, SimulatorConfig]:
         """Instances written in the project file (legacy domains included), no defaults."""
@@ -287,6 +288,7 @@ class MechatronicProject:
             metrics=dict(raw.get("metrics") or {}),
             instances=simulator_instances,
             declares_instances=bool(raw.get("instances")),
+            verification=dict(raw.get("verification") or {}),
         )
         project.validate()
         return project

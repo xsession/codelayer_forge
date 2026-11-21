@@ -106,3 +106,16 @@ metrics:
   right_current: {type: stats, signal: right.current}
   energy_left: {type: integral, signal: left.power}
   energy_right: {type: integral, signal: right.power}
+
+verification:
+  convergence:              # halves the macro step and every instance step together
+    signals: [left.wheel_speed, right.wheel_speed, left.current, right.current]
+    tolerance: 0.01
+    duration: 0.5
+  scenarios:
+    - name: slippery-left               # less load on the left wheel
+      signals: {left.load_torque: 0.0}
+      expect: [{metric: left_speed.final_value, min: 9.8, max: 10.2}]
+    - name: low-battery
+      signals: {bus.voltage: 12.0}
+      expect: [{metric: left_speed.final_value, min: 9.5}, {metric: right_speed.final_value, min: 5.7}]

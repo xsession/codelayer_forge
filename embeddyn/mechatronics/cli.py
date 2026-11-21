@@ -183,6 +183,36 @@ def tune_command(
                           indent=2, default=lambda value: None))
 
 
+@mechatronics_app.command("verify")
+def verify_command(
+    project_file: Path = typer.Argument(..., exists=True, dir_okay=False),
+    check: Optional[list[str]] = typer.Option(None, "--check", help="Run only these checks: energy, convergence, golden, scenarios."),
+    mock: bool = typer.Option(False, help="Use the built-in simulators for the core domains."),
+    update_golden: bool = typer.Option(False, "--update-golden", help="Rewrite the golden waveform file."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write the JSON report here."),
+) -> None:
+    """Verify a model: energy balance, step-size convergence, golden waveforms, scenario matrix.
+    Exits with status 1 when a check fails."""
+    from .verification import verify
+
+    def progress(name, result):
+        if name == "scenario":
+            note = result.get("error") or ", ".join(
+                f"{c['metric']}={c['value'] if c['value'] is None else round(c['value'], 4)}" for c in result["checks"])
+            typer.echo(f"  scenario {result['name']}: {'PASS' if result['passed'] else 'FAIL'} ({note})", err=True)
+        else:
+            typer.echo(f"{name}: {'PASS' if result['passed'] else 'FAIL'}", err=True)
+
+    report = verify(project_file, mock=mock, only=check, update_golden=update_golden, progress=progress)
+    text = json.dumps(report, indent=2, default=lambda value: None)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(text, encoding="utf-8")
+    typer.echo(text)
+    if not report["passed"]:
+        raise typer.Exit(1)
+
+
 @mechatronics_app.command("validate")
 def validate_project(project_file: Path = typer.Argument(..., exists=True, dir_okay=False)) -> None:
     project = MechatronicProject.load(project_file)

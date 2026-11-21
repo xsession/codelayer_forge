@@ -18,6 +18,7 @@ close the loop with bench measurements.
 | Mechanical: Webots | 🔴 Webots physics unused | reference controller computes the plant in Python; 0.5 ms step is rounded to 1 ms of Webots time |
 | Python plant models, thermal domain | 🟢 works | `backend: python` for any domain; geared drivetrain and winding thermal models ([TUNING.md](TUNING.md)) |
 | Named simulator instances, FMI | 🟢 works | any number of instances per domain with own rates; FMI 2.0/3.0 co-simulation FMUs ([INSTANCES_AND_FMI.md](INSTANCES_AND_FMI.md)) |
+| Verification (energy, convergence, golden, scenarios) | 🟢 works | `mechatronics verify`, gating CI ([VERIFICATION.md](VERIFICATION.md)) |
 | Tuning (metrics, optimiser, parameter estimation) | 🟡 metrics + optimiser work | `mechatronics tune` (bounded Nelder–Mead over full co-simulations); parameter estimation still affine only |
 | Studio UI for co-simulation | 🔴 missing | no API/UI to run or plot mechatronics runs |
 
@@ -152,7 +153,7 @@ checked against the code.* Order is the build order: each group unblocks the nex
 | 3 | ✅ Python plant models with sub-stepping; a drivetrain library (rotor, gearbox with backlash and compliance, Coulomb/Stribeck friction, load, encoder) | R3; ARCHITECTURE "mechanical domain" | done: `backend: python`, `plants.py` |
 | 4 | ✅ Named simulator instances (several per domain; thermal/environment domains, which the enum already has but the factory ignores) | R3; spec §3.5, §4.3 | done: `instances:` with per-instance rates |
 | 5 | ✅ FMI 2/3 co-simulation import (export still open) | R3; INTEGRATION_PLAN 5 | done: `backend: fmu` (ctypes) |
-| 6 | Verification checks: energy balance, step-size convergence, scenario matrices | INTEGRATION_PLAN 7 | golden traces only |
+| 6 | ✅ Verification checks: energy balance, step-size convergence, golden waveforms, scenario matrices | INTEGRATION_PLAN 7 | done: `mechatronics verify` ([VERIFICATION.md](VERIFICATION.md)), CI workflow |
 | 7 | Physical parameter estimation from bench traces (R, L, Kt, J, friction) with confidence intervals | R4; PHASE6 next steps | affine calibration only |
 | 8 | Monte Carlo tolerance runs through the experiment queue; sensitivity / Sobol analysis | R4; PHASE6 | sampling only, not executed |
 | 9 | Renode sensor/bus signals: quadrature encoder, UART/SPI/I²C/CAN frames, fault injection | R1; INTEGRATION_PLAN 4 | missing |

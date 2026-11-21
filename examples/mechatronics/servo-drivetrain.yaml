@@ -14,6 +14,7 @@ parameters:
   controller.ki: 4.0
   controller.anti_windup: 1
   drivetrain.backlash: {value: 0.004, unit: rad}
+  thermal.initial_temperature: 25.0
 
 simulators:
   firmware:
@@ -48,12 +49,14 @@ simulators:
         shaft_torque: mechanical.shaft_torque
         encoder_count: mechanical.encoder_count
         backlash_contact: mechanical.backlash_contact
+        dissipated_power: mechanical.dissipated_power
+        stored_energy: mechanical.stored_energy
   thermal:
     model: "embeddyn.mechatronics.plants:ThermalRC"
     options:
       backend: python
       max_step: 1.0e-3
-      parameters: {thermal_resistance: 3.0, thermal_capacitance: 10.0, resistance_20c: 2.0, initial_temperature: 25.0}
+      parameters: {thermal_resistance: 3.0, thermal_capacitance: 10.0, resistance_20c: 2.0, initial_temperature: "@thermal.initial_temperature"}
       inputs: {current: electrical.motor_current, ambient: thermal.ambient}
       outputs: {temperature: thermal.winding_temperature, resistance: thermal.winding_resistance, copper_loss: thermal.copper_loss}
 
@@ -80,6 +83,8 @@ signals:
   mechanical.shaft_torque: {domain: mechanical, unit: N*m, initial: 0.0}
   mechanical.encoder_count: {domain: mechanical, initial: 0.0}
   mechanical.backlash_contact: {domain: mechanical, initial: 0.0}
+  mechanical.dissipated_power: {domain: mechanical, unit: W, initial: 0.0}
+  mechanical.stored_energy: {domain: mechanical, unit: J, initial: 0.0}
   thermal.ambient: {domain: thermal, unit: degC, initial: 25.0}
   thermal.winding_temperature: {domain: thermal, unit: degC, initial: 25.0}
   thermal.winding_resistance: {domain: thermal, unit: ohm, initial: 2.0}
@@ -98,3 +103,34 @@ metrics:
   energy: {type: integral, signal: electrical.input_power}
   shaft: {type: stats, signal: mechanical.shaft_torque}
   temperature: {type: stats, signal: thermal.winding_temperature}
+
+verification:
+  energy:
+    # Electrical input = copper loss + drivetrain losses (bearings, friction, shaft damper)
+    # + work on the external load + change in magnetic and drivetrain (kinetic + spring) energy.
+    tolerance: 0.02
+    sources: [{name: electrical_input, product: [electrical.motor_voltage, electrical.motor_current]}]
+    sinks:
+      - {name: copper, product: [electrical.motor_current, electrical.motor_current, electrical.motor_resistance]}
+      - {name: drivetrain_losses, signal: mechanical.dissipated_power}
+      - {name: external_load, product: [mechanical.load_torque, mechanical.load_velocity]}
+    storage:
+      - {name: inductance, product: [0.5, electrical.motor_inductance, electrical.motor_current, electrical.motor_current]}
+      - {name: drivetrain, signal: mechanical.stored_energy}
+  convergence:
+    signals: [mechanical.velocity, mechanical.load_velocity, electrical.motor_current, thermal.winding_temperature]
+    tolerance: 0.01
+    duration: 0.5
+  scenarios:
+    - name: no-backlash
+      parameters: {drivetrain.backlash: 0.0}
+      expect: [{metric: speed.overshoot, max: 40.0}, {metric: shaft.peak, max: 25.0}]
+    - name: worn-gearbox
+      parameters: {drivetrain.backlash: 0.02}
+      expect: [{metric: speed.final_value, min: 7.5}, {metric: shaft.peak, max: 25.0}]
+    # Hot ambient and a pre-heated winding: higher resistance, less torque per volt.
+    - name: hot-start
+      parameters: {thermal.initial_temperature: 60.0}
+      signals: {thermal.ambient: 60.0, thermal.winding_temperature: 60.0, electrical.motor_resistance: 2.31}
+      expect: [{metric: temperature.min, min: 60.0}, {metric: temperature.max, max: 80.0}, {metric: speed.final_value, min: 7.5}]
+

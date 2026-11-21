@@ -45,3 +45,39 @@ metrics:
   speed: {type: step_response, signal: mechanical.velocity, target: firmware.target_velocity, settling_band: 0.02}
   current: {type: stats, signal: electrical.motor_current}
   energy: {type: integral, signal: electrical.input_power}
+
+verification:
+  energy:
+    # Electrical input = copper loss + viscous loss + work on the load + change in stored energy.
+    # Kt = Ke (0.08), so the electromechanical conversion cancels out.
+    tolerance: 0.02
+    sources: [{name: electrical_input, product: [electrical.motor_voltage, electrical.motor_current]}]
+    sinks:
+      - {name: copper, product: [electrical.motor_current, electrical.motor_current, electrical.motor_resistance]}
+      - {name: viscous, product: [mechanical.damping, mechanical.velocity, mechanical.velocity]}
+      - {name: load, product: [mechanical.load_torque, mechanical.velocity]}
+    storage:
+      - {name: inductance, product: [0.5, electrical.motor_inductance, electrical.motor_current, electrical.motor_current]}
+      - {name: rotor, product: [0.5, mechanical.inertia, mechanical.velocity, mechanical.velocity]}
+  convergence:
+    signals: [mechanical.velocity, electrical.motor_current]
+    tolerance: 0.01
+  golden:
+    file: golden/dc-motor.csv
+    every: 0.01
+    signals: {mechanical.velocity: 0.001, electrical.motor_current: 0.01}
+  scenarios:
+    - name: nominal
+      expect: [{metric: current.peak, max: 15.0}]
+    - name: low-supply
+      signals: {electrical.supply_voltage: 18.0}
+      expect: [{metric: speed.final_value, min: 4.5}, {metric: current.peak, max: 15.0}]
+    - name: heavy-load
+      signals: {mechanical.load_torque: 0.3}
+      expect: [{metric: speed.final_value, min: 4.5}]
+    # Aggressive gains overshoot by about 20 % through integrator windup (the mock
+    # controller has none by default); with anti-windup they stay under 10 %.
+    - name: aggressive-gains-anti-windup
+      parameters: {controller.kp: 2.0, controller.ki: 5.0, controller.anti_windup: 1}
+      duration: 1.0
+      expect: [{metric: speed.overshoot, max: 10.0}, {metric: current.peak, max: 15.0}]
