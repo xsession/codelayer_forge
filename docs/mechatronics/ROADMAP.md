@@ -19,7 +19,7 @@ close the loop with bench measurements.
 | Python plant models, thermal domain | 🟢 works | `backend: python` for any domain; geared drivetrain and winding thermal models ([TUNING.md](TUNING.md)) |
 | Named simulator instances, FMI | 🟢 works | any number of instances per domain with own rates; FMI 2.0/3.0 co-simulation FMUs ([INSTANCES_AND_FMI.md](INSTANCES_AND_FMI.md)) |
 | Verification (energy, convergence, golden, scenarios) | 🟢 works | `mechatronics verify`, gating CI ([VERIFICATION.md](VERIFICATION.md)) |
-| Tuning (metrics, optimiser, parameter estimation) | 🟡 metrics + optimiser work | `mechatronics tune` (bounded Nelder–Mead over full co-simulations); parameter estimation still affine only |
+| Tuning (metrics, optimiser, parameter estimation) | 🟢 works | `mechatronics tune` (bounded Nelder–Mead over full co-simulations); parameter estimation with confidence intervals ([ESTIMATION.md](ESTIMATION.md)) |
 | Studio UI for co-simulation | 🔴 missing | no API/UI to run or plot mechatronics runs |
 
 Firmware runs for real in Renode and electronics in ngspice; the mechanical domain still runs only as a built-in model.
@@ -121,8 +121,9 @@ Next:
   co-simulations with weighted objectives and constraints.
 - [ ] Optimiser jobs on the distributed-worker system (parallel evaluations),
   CMA-ES / Bayesian methods.
-- [ ] Physical parameter estimation from bench traces (R, L, Kt, J, friction),
-  replacing per-signal affine calibration for model fitting.
+- [x] Physical parameter estimation from bench traces (`mechatronics estimate`):
+  Levenberg–Marquardt over full co-simulations, replayed inputs, 95 %
+  confidence intervals and parameter correlations.
 - [ ] Monte-Carlo tolerance runs over component spread, reusing the
   uncertainty module, with yield and requirements reports.
 - [x] Firmware parameter injection at run time (`float32` sysbus binding into
@@ -154,7 +155,7 @@ checked against the code.* Order is the build order: each group unblocks the nex
 | 4 | ✅ Named simulator instances (several per domain; thermal/environment domains, which the enum already has but the factory ignores) | R3; spec §3.5, §4.3 | done: `instances:` with per-instance rates |
 | 5 | ✅ FMI 2/3 co-simulation import (export still open) | R3; INTEGRATION_PLAN 5 | done: `backend: fmu` (ctypes) |
 | 6 | ✅ Verification checks: energy balance, step-size convergence, golden waveforms, scenario matrices | INTEGRATION_PLAN 7 | done: `mechatronics verify` ([VERIFICATION.md](VERIFICATION.md)), CI workflow |
-| 7 | Physical parameter estimation from bench traces (R, L, Kt, J, friction) with confidence intervals | R4; PHASE6 next steps | affine calibration only |
+| 7 | ✅ Physical parameter estimation from bench traces (R, L, Kt, J, friction) with confidence intervals | R4; PHASE6 next steps | done: `mechatronics estimate` ([ESTIMATION.md](ESTIMATION.md)) |
 | 8 | Monte Carlo tolerance runs through the experiment queue; sensitivity / Sobol analysis | R4; PHASE6 | sampling only, not executed |
 | 9 | Renode sensor/bus signals: quadrature encoder, UART/SPI/I²C/CAN frames, fault injection | R1; INTEGRATION_PLAN 4 | missing |
 | 10 | Renode fork fixes upstreamed (pins, patches 0001–0003, platform files), checkpoints via Save/Load | R1 | patches local only |

@@ -62,7 +62,7 @@ def validate_integrations(project: MechatronicProject) -> dict[str, Any]:
                 warnings.append(str(exc))
         elif config.model and (model is None or not model.exists()):
             errors.append(f"model does not exist: {model}")
-        if backend not in {"mock", "auto", "python", "ngspice-shared", "fmu"} and shutil.which(executable) is None and not Path(executable).exists():
+        if backend not in {"mock", "auto", "python", "ngspice-shared", "fmu", "replay"} and shutil.which(executable) is None and not Path(executable).exists():
             warnings.append(f"executable not found in current environment: {executable}")
         check: dict[str, Any] = {"name": instance_name, "domain": domain.value, "backend": backend, "model": str(model) if model else None,
                                  "valid": not errors, "errors": errors, "warnings": warnings}

@@ -213,6 +213,28 @@ def verify_command(
         raise typer.Exit(1)
 
 
+@mechatronics_app.command("estimate")
+def estimate_command(
+    spec_file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Estimation spec (YAML)."),
+    output: Path = typer.Option(Path(".embeddyn/estimation/result.json"), "--output", "-o"),
+) -> None:
+    """Estimate physical parameters from bench measurements (Levenberg-Marquardt, 95 % confidence intervals)."""
+    from .estimation import estimate, load_estimation_spec, write_result
+    spec = load_estimation_spec(spec_file)
+
+    def progress(record):
+        values = ", ".join(f"{name}={value:.5g}" for name, value in record["parameters"].items())
+        typer.echo(f"[{record['iteration']:2d}] cost={record['cost']:.6g}  {values}  ({record['evaluations']} runs)", err=True)
+
+    result = estimate(spec, progress)
+    write_result(result, output)
+    summary = {name: {"estimate": item["estimate"], "ci95": item["ci95"], "at_bound": item["at_bound"]}
+               for name, item in result["parameters"].items()}
+    typer.echo(json.dumps({"output": str(output), "parameters": summary, "fit": result["fit"],
+                           "cost": result["cost"], "evaluations": result["evaluations"]},
+                          indent=2, default=lambda value: None))
+
+
 @mechatronics_app.command("validate")
 def validate_project(project_file: Path = typer.Argument(..., exists=True, dir_okay=False)) -> None:
     project = MechatronicProject.load(project_file)

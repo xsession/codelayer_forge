@@ -31,7 +31,7 @@ instances:
 * `step` makes the scheduler multi-rate (it is chosen automatically when no
   `scheduler.algorithm` is given). Activations are ordered by time, then by
   the order above.
-* Backends usable in every domain: `python`, `fmu`. Firmware also has `renode`
+* Backends usable in every domain: `python`, `fmu`, `replay` (recorded data, see [ESTIMATION.md](ESTIMATION.md)). Firmware also has `renode`
   and `mock`; electrical has `ngspice-shared`, `ngspice`, `ltspice` and `mock`;
   mechanical has `webots` and `mock`.
 

@@ -87,8 +87,11 @@ def _build_instance(project: MechatronicProject, cfg: SimulatorConfig, mock: boo
     if backend == "fmu":
         from .adapters.fmu import FmuAdapter
         return FmuAdapter(**fmu_kwargs(project, cfg))
+    if backend == "replay":
+        from .adapters.replay import ReplayAdapter
+        return ReplayAdapter(**replay_kwargs(project, cfg))
     if not core:
-        raise ValueError(f"{cfg.name}: {domain.value} instances support backends python and fmu (got {backend})")
+        raise ValueError(f"{cfg.name}: {domain.value} instances support backends python, fmu and replay (got {backend})")
     if domain is Domain.FIRMWARE:
         if backend == "mock":
             return MockFirmwareAdapter()
@@ -136,6 +139,18 @@ def fmu_kwargs(project: MechatronicProject, cfg) -> dict:
     }
 
 
+def replay_kwargs(project: MechatronicProject, cfg) -> dict:
+    options = dict(cfg.options)
+    if not cfg.model:
+        raise ValueError(f"{cfg.name}: replay backend needs `model: recording.csv`")
+    return {
+        "file": str(project.resolve(cfg.model)),
+        "columns": dict(options.get("columns", {})),
+        "interpolation": str(options.get("interpolation", "previous")),
+        "time_column": str(options.get("time_column", "time")),
+    }
+
+
 def build_adapters(project: MechatronicProject, mock: bool = False, isolate: bool = False):
     """Adapters keyed by simulator instance name (legacy instances are named
     after their domain, and Domain keys work for lookups)."""
@@ -169,6 +184,8 @@ def build_adapters(project: MechatronicProject, mock: bool = False, isolate: boo
                 kwargs = renode_kwargs(project, cfg)
             elif adapter.__class__.__name__ == "FmuAdapter":
                 kwargs = fmu_kwargs(project, cfg)
+            elif adapter.__class__.__name__ == "ReplayAdapter":
+                kwargs = replay_kwargs(project, cfg)
             spec = AdapterWorkerSpec(adapter.__class__.__module__, adapter.__class__.__name__, kwargs)
             timeout = float(cfg.options.get("worker_timeout", 30.0))
             isolated[name] = ProcessAdapterProxy(spec, timeout_seconds=timeout)
