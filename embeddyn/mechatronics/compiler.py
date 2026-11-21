@@ -52,12 +52,14 @@ class ProjectCompiler:
             "project_revision": project_digest,
             "schema_version": project.schema_version,
             "simulators": {
-                domain.value: {
+                name: {
                     "model": cfg.model,
                     "executable": cfg.executable,
                     "options": cfg.options,
+                    **({"domain": cfg.domain.value} if name != cfg.domain.value else {}),
+                    **({"step_seconds": cfg.step_seconds} if cfg.step_seconds is not None else {}),
                 }
-                for domain, cfg in sorted(project.simulators.items(), key=lambda item: item[0].value)
+                for name, cfg in sorted(project.declared_instances().items())
             },
         }
         lock_path = run_dir / "project.lock.json"
@@ -124,8 +126,10 @@ class ProjectCompiler:
                            for key, value in sorted(project.parameters.items())},
             "components": {"definitions": project.component_definitions, "instances": project.component_instances},
             "simulators": {
-                domain.value: {"enabled": cfg.enabled, "executable": cfg.executable, "model": cfg.model, "options": cfg.options}
-                for domain, cfg in sorted(project.simulators.items(), key=lambda item: item[0].value)
+                name: {"enabled": cfg.enabled, "executable": cfg.executable, "model": cfg.model, "options": cfg.options,
+                       **({"domain": cfg.domain.value} if name != cfg.domain.value else {}),
+                       **({"step_seconds": cfg.step_seconds} if cfg.step_seconds is not None else {})}
+                for name, cfg in sorted(project.declared_instances().items())
             },
             "signals": {
                 name: {

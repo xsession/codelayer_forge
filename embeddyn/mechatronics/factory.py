@@ -13,7 +13,7 @@ from .adapters import (
     RenodeAdapter,
     WebotsAdapter,
 )
-from .model import Domain, MechatronicProject
+from .model import Domain, MechatronicProject, SimulatorConfig
 
 
 def renode_kwargs(project: MechatronicProject, cfg) -> dict:
@@ -74,58 +74,85 @@ def python_model_kwargs(project: MechatronicProject, cfg) -> dict:
     }
 
 
+def _build_instance(project: MechatronicProject, cfg: SimulatorConfig, mock: bool):
+    """Adapter for one simulator instance, or None when the backend builds nothing."""
+    domain = cfg.domain
+    core = domain in (Domain.FIRMWARE, Domain.ELECTRICAL, Domain.MECHANICAL)
+    backend = str(cfg.options.get("backend", "mock" if mock else "auto")).lower()
+    options = dict(cfg.options)
+    if mock and core:
+        backend = "mock"
+    if backend == "python":
+        return PythonModelAdapter(**python_model_kwargs(project, cfg))
+    if backend == "fmu":
+        from .adapters.fmu import FmuAdapter
+        return FmuAdapter(**fmu_kwargs(project, cfg))
+    if not core:
+        raise ValueError(f"{cfg.name}: {domain.value} instances support backends python and fmu (got {backend})")
+    if domain is Domain.FIRMWARE:
+        if backend == "mock":
+            return MockFirmwareAdapter()
+        if backend == "renode":
+            return RenodeAdapter(**renode_kwargs(project, cfg))
+        return None
+    if domain is Domain.ELECTRICAL:
+        if backend == "mock":
+            return MockElectricalAdapter()
+        if backend == "ltspice":
+            return LTspiceAdapter(project.resolve(cfg.model) or Path("circuit.cir"), executable=cfg.executable,
+                                  output_csv=str(options.get("output_csv", "cosim.csv")))
+        if backend == "ngspice-shared":
+            return NgspiceSharedAdapter(**ngspice_shared_kwargs(project, cfg))
+        if backend in {"ngspice", "auto"}:
+            return NgspiceAdapter(project.resolve(cfg.model) or Path("circuit.cir"), executable=cfg.executable,
+                                  output_csv=str(options.get("output_csv", "cosim.csv")))
+        return None
+    if backend == "mock":
+        return MockMechanicalAdapter()
+    if backend in {"webots", "auto"}:
+        return WebotsAdapter(
+            world=project.resolve(cfg.model) or Path("world.wbt"),
+            executable=cfg.executable,
+            host=str(options.get("host", "127.0.0.1")),
+            port=int(options.get("port", 8765)),
+            headless=bool(options.get("headless", True)),
+            launch=bool(options.get("launch", True)),
+        )
+    return None
+
+
+def fmu_kwargs(project: MechatronicProject, cfg) -> dict:
+    """Translate simulator options into FmuAdapter keyword arguments."""
+    options = dict(cfg.options)
+    if not cfg.model:
+        raise ValueError(f"{cfg.name}: fmu backend needs `model: path/to/model.fmu`")
+    return {
+        "fmu": str(project.resolve(cfg.model)),
+        "parameters": dict(options.get("parameters", {})),
+        "inputs": dict(options.get("inputs", {})),
+        "outputs": dict(options.get("outputs", {})),
+        "max_step": float(options["max_step"]) if options.get("max_step") is not None else None,
+        "instance_name": cfg.name or "fmu",
+    }
+
+
 def build_adapters(project: MechatronicProject, mock: bool = False, isolate: bool = False):
-    adapters = {}
-    for domain in Domain:
-        cfg = project.simulators.get(domain)
-        if cfg and not cfg.enabled:
+    """Adapters keyed by simulator instance name (legacy instances are named
+    after their domain, and Domain keys work for lookups)."""
+    from .runtime import InstanceMap
+    adapters = InstanceMap()
+    configs = project.simulator_instances()
+    for name, cfg in configs.items():
+        if not cfg.enabled:
             continue
-        if domain in (Domain.THERMAL, Domain.ENVIRONMENT) and cfg is None:
-            continue
-        backend = str((cfg.options if cfg else {}).get("backend", "mock" if mock else "auto")).lower()
-        options = dict(cfg.options if cfg else {})
-        if backend == "python" and not (mock and domain in (Domain.FIRMWARE, Domain.ELECTRICAL, Domain.MECHANICAL)):
-            adapters[domain] = PythonModelAdapter(**python_model_kwargs(project, cfg))
-        elif domain in (Domain.THERMAL, Domain.ENVIRONMENT):
-            raise ValueError(f"{domain.value} domain supports backend: python (got {backend})")
-        elif domain is Domain.FIRMWARE:
-            if mock or backend == "mock":
-                adapters[domain] = MockFirmwareAdapter()
-            elif backend == "renode":
-                adapters[domain] = RenodeAdapter(**renode_kwargs(project, cfg))
-        elif domain is Domain.ELECTRICAL:
-            if mock or backend == "mock":
-                adapters[domain] = MockElectricalAdapter()
-            elif backend == "ltspice":
-                adapters[domain] = LTspiceAdapter(
-                    project.resolve(cfg.model) or Path("circuit.cir"),
-                    executable=cfg.executable,
-                    output_csv=str(options.get("output_csv", "cosim.csv")),
-                )
-            elif backend == "ngspice-shared":
-                adapters[domain] = NgspiceSharedAdapter(**ngspice_shared_kwargs(project, cfg))
-            elif backend in {"ngspice", "auto"}:
-                adapters[domain] = NgspiceAdapter(
-                    project.resolve(cfg.model) or Path("circuit.cir"),
-                    executable=cfg.executable,
-                    output_csv=str(options.get("output_csv", "cosim.csv")),
-                )
-        elif domain is Domain.MECHANICAL:
-            if mock or backend == "mock":
-                adapters[domain] = MockMechanicalAdapter()
-            elif backend in {"webots", "auto"}:
-                adapters[domain] = WebotsAdapter(
-                    world=project.resolve(cfg.model) or Path("world.wbt"),
-                    executable=cfg.executable,
-                    host=str(options.get("host", "127.0.0.1")),
-                    port=int(options.get("port", 8765)),
-                    headless=bool(options.get("headless", True)),
-                    launch=bool(options.get("launch", True)),
-                )
+        adapter = _build_instance(project, cfg, mock)
+        if adapter is not None:
+            adapters[name] = adapter
     if isolate:
         from .runtime import AdapterWorkerSpec, ProcessAdapterProxy
-        isolated = {}
-        for domain, adapter in adapters.items():
+        isolated = InstanceMap()
+        for name, adapter in adapters.items():
+            cfg = configs[name]
             kwargs = {}
             if isinstance(adapter, (LTspiceAdapter, NgspiceAdapter)):
                 kwargs = {"netlist": adapter.netlist, "executable": adapter.executable,
@@ -135,13 +162,15 @@ def build_adapters(project: MechatronicProject, mock: bool = False, isolate: boo
                           "port": adapter.port, "headless": adapter.headless, "launch": adapter.launch,
                           "timeout": adapter.timeout}
             elif isinstance(adapter, NgspiceSharedAdapter):
-                kwargs = ngspice_shared_kwargs(project, project.simulators[domain])
+                kwargs = ngspice_shared_kwargs(project, cfg)
             elif isinstance(adapter, PythonModelAdapter):
-                kwargs = python_model_kwargs(project, project.simulators[domain])
+                kwargs = python_model_kwargs(project, cfg)
             elif isinstance(adapter, RenodeAdapter):
-                kwargs = renode_kwargs(project, project.simulators[domain])
+                kwargs = renode_kwargs(project, cfg)
+            elif adapter.__class__.__name__ == "FmuAdapter":
+                kwargs = fmu_kwargs(project, cfg)
             spec = AdapterWorkerSpec(adapter.__class__.__module__, adapter.__class__.__name__, kwargs)
-            timeout = float((project.simulators.get(domain).options if project.simulators.get(domain) else {}).get("worker_timeout", 30.0))
-            isolated[domain] = ProcessAdapterProxy(spec, timeout_seconds=timeout)
+            timeout = float(cfg.options.get("worker_timeout", 30.0))
+            isolated[name] = ProcessAdapterProxy(spec, timeout_seconds=timeout)
         return isolated
     return adapters

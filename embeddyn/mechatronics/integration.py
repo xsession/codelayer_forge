@@ -14,9 +14,10 @@ def validate_integrations(project: MechatronicProject) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     bindings = validate_project_bindings(project)
     checks.append({"name": "bindings", **bindings})
-    for domain, config in project.simulators.items():
+    for instance_name, config in project.declared_instances().items():
         if not config.enabled:
             continue
+        domain = config.domain
         backend = str(config.options.get("backend", domain.value))
         executable = config.executable or backend
         if backend == "renode":
@@ -41,6 +42,18 @@ def validate_integrations(project: MechatronicProject) -> dict[str, Any]:
                         errors.append(f"plant parameter {key} refers to unknown project parameter {value[1:]}")
             except Exception as exc:
                 errors.append(f"python model: {exc}")
+        elif backend == "fmu":
+            from .adapters.fmu import FmuAdapter
+            from .factory import fmu_kwargs
+            try:
+                kwargs = fmu_kwargs(project, config)
+                FmuAdapter(**kwargs)
+                known = set(project.signals) | set(project.parameters)
+                for name in [*kwargs["inputs"].values(), *kwargs["outputs"].values()]:
+                    if name not in known:
+                        errors.append(f"FMU maps unknown signal: {name}")
+            except Exception as exc:
+                errors.append(f"fmu: {exc}")
         elif backend == "ngspice-shared":
             from .adapters.ngspice_shared import NgspiceError, find_library
             try:
@@ -49,9 +62,9 @@ def validate_integrations(project: MechatronicProject) -> dict[str, Any]:
                 warnings.append(str(exc))
         elif config.model and (model is None or not model.exists()):
             errors.append(f"model does not exist: {model}")
-        if backend not in {"mock", "auto", "python", "ngspice-shared"} and shutil.which(executable) is None and not Path(executable).exists():
+        if backend not in {"mock", "auto", "python", "ngspice-shared", "fmu"} and shutil.which(executable) is None and not Path(executable).exists():
             warnings.append(f"executable not found in current environment: {executable}")
-        check: dict[str, Any] = {"name": domain.value, "backend": backend, "model": str(model) if model else None,
+        check: dict[str, Any] = {"name": instance_name, "domain": domain.value, "backend": backend, "model": str(model) if model else None,
                                  "valid": not errors, "errors": errors, "warnings": warnings}
         if domain is Domain.FIRMWARE and backend == "renode":
             from .adapters.renode import load_renode_bindings

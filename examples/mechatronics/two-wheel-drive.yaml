@@ -1,0 +1,108 @@
+name: two-wheel-drive
+step_seconds: 0.001                   # controllers run at the 1 kHz macro step
+duration_seconds: 1.0
+metadata:
+  description: >
+    Differential drive with two independent speed loops, built from named
+    simulator instances: two PI controllers (firmware domain), two DC motor
+    armature models (electrical), and two wheels (mechanical): the left wheel
+    is an FMI 2.0 FMU, the right one a geared drivetrain with backlash.
+    Build the FMU first: python examples/mechatronics/fmus/rotational_load/build_fmu.py
+
+parameters:
+  left.kp: 0.15
+  left.ki: 1.5
+  right.kp: 0.4
+  right.ki: 2.0
+
+instances:
+  ctrl_left:
+    domain: firmware
+    model: "embeddyn.mechatronics.plants:PIController"
+    options:
+      backend: python
+      parameters: {kp: "@left.kp", ki: "@left.ki"}
+      inputs: {target: left.target_speed, measured: left.wheel_speed}
+      outputs: {command: left.duty, error: left.speed_error}
+  ctrl_right:
+    domain: firmware
+    model: "embeddyn.mechatronics.plants:PIController"
+    options:
+      backend: python
+      parameters: {kp: "@right.kp", ki: "@right.ki"}
+      inputs: {target: right.target_speed, measured: right.motor_speed_scaled}
+      outputs: {command: right.duty, error: right.speed_error}
+  drive_left:
+    domain: electrical
+    step: 0.0005                      # plants at 2 kHz
+    model: "embeddyn.mechatronics.plants:DCMotorRL"
+    options:
+      backend: python
+      max_step: 2.0e-5
+      inputs: {duty: left.duty, supply: bus.voltage, speed: left.wheel_speed}
+      outputs: {current: left.current, power: left.power, torque: left.torque}
+  drive_right:
+    domain: electrical
+    step: 0.0005                      # plants at 2 kHz
+    model: "embeddyn.mechatronics.plants:DCMotorRL"
+    options:
+      backend: python
+      max_step: 2.0e-5
+      inputs: {duty: right.duty, supply: bus.voltage, speed: right.motor_speed}
+      outputs: {current: right.current, power: right.power, torque: right.torque}
+  wheel_left:
+    domain: mechanical
+    step: 0.0005                      # plants at 2 kHz
+    model: fmus/rotational_load.fmu
+    options:
+      backend: fmu
+      max_step: 1.0e-4
+      parameters: {J: 0.01, b: 0.005, coulomb: 0.01}
+      inputs: {tau: left.torque, tau_load: left.load_torque}
+      outputs: {w: left.wheel_speed, theta: left.wheel_angle}
+  wheel_right:
+    domain: mechanical
+    step: 0.0005                      # plants at 2 kHz
+    model: "embeddyn.mechatronics.plants:GearedDrivetrain"
+    options:
+      backend: python
+      max_step: 2.0e-5
+      parameters: {motor_inertia: 0.002, gear_ratio: 5, backlash: 0.003, shaft_stiffness: 2000,
+                   shaft_damping: 2, load_inertia: 0.2, coulomb_friction: 0.05, encoder_cpr: 2048}
+      inputs: {motor_torque: right.torque, load_torque: right.load_torque}
+      outputs: {motor_speed: right.motor_speed, load_speed: right.wheel_speed, encoder_count: right.encoder}
+
+signals:
+  bus.voltage: {domain: electrical, unit: V, initial: 24.0}
+  left.target_speed: {domain: firmware, unit: rad/s, initial: 10.0}
+  left.speed_error: {domain: firmware, unit: rad/s, initial: 0.0}
+  left.duty: {domain: firmware, initial: 0.0, min: -1.0, max: 1.0}
+  left.current: {domain: electrical, unit: A, initial: 0.0}
+  left.power: {domain: electrical, unit: W, initial: 0.0}
+  left.torque: {domain: electrical, unit: N*m, initial: 0.0}
+  left.load_torque: {domain: mechanical, unit: N*m, initial: 0.05}
+  left.wheel_speed: {domain: mechanical, unit: rad/s, initial: 0.0}
+  left.wheel_angle: {domain: mechanical, unit: rad, initial: 0.0}
+  right.target_speed: {domain: firmware, unit: rad/s, initial: 6.0}
+  right.speed_error: {domain: firmware, unit: rad/s, initial: 0.0}
+  right.duty: {domain: firmware, initial: 0.0, min: -1.0, max: 1.0}
+  right.current: {domain: electrical, unit: A, initial: 0.0}
+  right.power: {domain: electrical, unit: W, initial: 0.0}
+  right.torque: {domain: electrical, unit: N*m, initial: 0.0}
+  right.load_torque: {domain: mechanical, unit: N*m, initial: 0.2}
+  right.motor_speed: {domain: mechanical, unit: rad/s, initial: 0.0}
+  right.motor_speed_scaled: {domain: firmware, unit: rad/s, initial: 0.0}
+  right.wheel_speed: {domain: mechanical, unit: rad/s, initial: 0.0}
+  right.encoder: {domain: mechanical, initial: 0.0}
+
+couplings:
+  # The right controller regulates wheel speed from the motor side: motor speed / gear ratio.
+  - {source: right.motor_speed, target: right.motor_speed_scaled, gain: 0.2, delay_steps: 1}
+
+metrics:
+  left_speed: {type: step_response, signal: left.wheel_speed, target: left.target_speed}
+  right_speed: {type: step_response, signal: right.wheel_speed, target: right.target_speed}
+  left_current: {type: stats, signal: left.current}
+  right_current: {type: stats, signal: right.current}
+  energy_left: {type: integral, signal: left.power}
+  energy_right: {type: integral, signal: right.power}

@@ -119,7 +119,7 @@ def run_project(
             steps=len(rows),
             metrics=metrics,
             runtime={
-                "activation_count": {domain.value: count for domain, count in runtime.activation_count.items()},
+                "activation_count": dict(runtime.activation_count),
                 "isolated_adapters": isolate_adapters,
                 "resumed_from": str(resume_from) if resume_from else None,
             },
@@ -139,7 +139,7 @@ def run_project(
         "manifest": str(compiled.manifest_path),
         "final": rows[-1] if rows else {},
         "metrics": metrics,
-        "activation_count": {domain.value: count for domain, count in runtime.activation_count.items()},
+        "activation_count": dict(runtime.activation_count),
         "isolated_adapters": isolate_adapters,
     }, indent=2))
 

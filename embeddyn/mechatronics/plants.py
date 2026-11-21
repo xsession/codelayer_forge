@@ -110,3 +110,70 @@ class ThermalRC:
     def output(self, t: float, x: Sequence[float], u: Mapping[str, float]) -> dict[str, float]:
         resistance = self._resistance(x[0])
         return {"temperature": x[0], "resistance": resistance, "copper_loss": u.get("current", 0.0) ** 2 * resistance}
+
+
+class PIController:
+    """Continuous PI speed controller with output clamping and anti-windup.
+
+    Mappable inputs (`target`, `measured`), so several controllers can run as
+    separate firmware-domain instances (the mock firmware is tied to fixed
+    signal names).
+    """
+
+    inputs = ("target", "measured")
+    outputs = ("command", "error")
+    states = ("integral",)
+
+    def __init__(self, kp: float = 0.12, ki: float = 0.8, minimum: float = -1.0, maximum: float = 1.0) -> None:
+        if minimum >= maximum:
+            raise ValueError("minimum must be below maximum")
+        self.kp, self.ki, self.lo, self.hi = kp, ki, minimum, maximum
+
+    def initial_state(self) -> list[float]:
+        return [0.0]
+
+    def _raw(self, x: Sequence[float], u: Mapping[str, float]) -> tuple[float, float]:
+        error = u.get("target", 0.0) - u.get("measured", 0.0)
+        return error, self.kp * error + self.ki * x[0]
+
+    def derivatives(self, t: float, x: Sequence[float], u: Mapping[str, float]) -> list[float]:
+        error, raw = self._raw(x, u)
+        # Conditional integration: stop integrating while saturated in the direction of the error.
+        if (raw >= self.hi and error > 0) or (raw <= self.lo and error < 0):
+            return [0.0]
+        return [error]
+
+    def output(self, t: float, x: Sequence[float], u: Mapping[str, float]) -> dict[str, float]:
+        error, raw = self._raw(x, u)
+        return {"command": min(self.hi, max(self.lo, raw)), "error": error}
+
+
+class DCMotorRL:
+    """Armature circuit of a PWM-driven DC motor: L di/dt = duty*V - R i - Ke w.
+
+    Outputs current, terminal voltage, electrical input power and torque Kt*i.
+    """
+
+    inputs = ("duty", "supply", "speed")
+    outputs = ("current", "voltage", "power", "torque", "back_emf")
+    states = ("current",)
+
+    def __init__(self, resistance: float = 2.0, inductance: float = 0.003, ke: float = 0.08, kt: float = 0.08,
+                 current: float = 0.0) -> None:
+        if resistance <= 0 or inductance <= 0:
+            raise ValueError("resistance and inductance must be positive")
+        self.r, self.l, self.ke, self.kt, self.i0 = resistance, inductance, ke, kt, current
+
+    def initial_state(self) -> list[float]:
+        return [self.i0]
+
+    def _voltage(self, u: Mapping[str, float]) -> float:
+        return max(-1.0, min(1.0, u.get("duty", 0.0))) * u.get("supply", 24.0)
+
+    def derivatives(self, t: float, x: Sequence[float], u: Mapping[str, float]) -> list[float]:
+        return [(self._voltage(u) - self.r * x[0] - self.ke * u.get("speed", 0.0)) / self.l]
+
+    def output(self, t: float, x: Sequence[float], u: Mapping[str, float]) -> dict[str, float]:
+        voltage = self._voltage(u)
+        return {"current": x[0], "voltage": voltage, "power": voltage * x[0], "torque": self.kt * x[0],
+                "back_emf": self.ke * u.get("speed", 0.0)}

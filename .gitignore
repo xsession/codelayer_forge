@@ -13,3 +13,4 @@ embeddyn/__pycache__/
 examples/mechatronics/firmware/*.elf
 examples/mechatronics/firmware/*/build/
 __pycache__/
+examples/mechatronics/fmus/*.fmu

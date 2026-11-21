@@ -30,7 +30,7 @@ embeddyn mechatronics run examples/mechatronics/dc-motor.yaml --mock
 
 See [the architecture](docs/mechatronics/ARCHITECTURE.md) and [quick start](docs/mechatronics/QUICKSTART.md).
 
-Real firmware can run in the loop in Renode (custom-cores branch, External Control API); see [Renode firmware-in-the-loop](docs/mechatronics/RENODE.md). Switching electronics run in ngspice with state kept across steps; see [ngspice in the loop](docs/mechatronics/NGSPICE.md). Mechanical and thermal plants can be Python models, and `embeddyn mechatronics tune` optimises parameters against response metrics; see [metrics, tuning and plant models](docs/mechatronics/TUNING.md). The plan toward full firmware + electronics + mechanics emulation and tuning is in the [roadmap](docs/mechatronics/ROADMAP.md).
+Real firmware can run in the loop in Renode (custom-cores branch, External Control API); see [Renode firmware-in-the-loop](docs/mechatronics/RENODE.md). Switching electronics run in ngspice with state kept across steps; see [ngspice in the loop](docs/mechatronics/NGSPICE.md). Mechanical and thermal plants can be Python models, and `embeddyn mechatronics tune` optimises parameters against response metrics; see [metrics, tuning and plant models](docs/mechatronics/TUNING.md). Systems can have any number of named simulator instances, including FMI 2.0/3.0 FMUs; see [instances and FMI](docs/mechatronics/INSTANCES_AND_FMI.md). The plan toward full firmware + electronics + mechanics emulation and tuning is in the [roadmap](docs/mechatronics/ROADMAP.md).
 
 
 ## RF / EMC simulation perspective

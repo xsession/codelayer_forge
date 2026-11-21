@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 
 from .adapters import SimulatorAdapter
 from .model import Coupling, Domain, MechatronicProject, SignalKind
-from .runtime import AdapterManager, CheckpointManager, EventQueue, build_scheduler
+from .runtime import AdapterManager, CheckpointManager, EventQueue, InstanceCounter, InstanceMap, ScheduleEntry, build_scheduler
 from .storage.telemetry import StructuredRecordWriter, TelemetryWriter
 
 
@@ -20,11 +20,13 @@ class CoSimulationOrchestrator:
     Phase 1/2 API.
     """
 
-    def __init__(self, project: MechatronicProject, adapters: Mapping[Domain, SimulatorAdapter]) -> None:
+    def __init__(self, project: MechatronicProject, adapters: Mapping[Any, SimulatorAdapter]) -> None:
         self.project = project
-        self.adapters = dict(adapters)
-        self.manager = AdapterManager(self.adapters)
-        self.scheduler = build_scheduler(project.scheduler)
+        self.adapters = InstanceMap(adapters)
+        self.entries = self._schedule_entries()
+        self.instance_domains = {entry.name: entry.domain for entry in self.entries}
+        self.manager = AdapterManager(self.adapters, self.instance_domains)
+        self.scheduler = build_scheduler(project.scheduler, self.entries)
         self.events = EventQueue()
         self.values: dict[str, Any] = {name: signal.initial for name, signal in project.signals.items()}
         self.history: dict[str, deque[float]] = {
@@ -36,7 +38,27 @@ class CoSimulationOrchestrator:
         for coupling in project.couplings:
             self.by_target_domain[project.signals[coupling.target].domain].append(coupling)
         self.current_time = 0.0
-        self.activation_count: dict[Domain, int] = defaultdict(int)
+        self.activation_count: InstanceCounter = InstanceCounter()
+
+    def _schedule_entries(self) -> list[ScheduleEntry]:
+        """Configured instances, adapters given without configuration (named
+        after their domain), and a coupling-only slot for every domain that has
+        no instance, so couplings into it are still applied each step."""
+        entries: dict[str, ScheduleEntry] = {}
+        for name, config in self.project.simulator_instances().items():
+            if config.enabled and config.domain is not None:
+                entries[name] = ScheduleEntry(name, config.domain, config.step_seconds)
+        for name in self.adapters:
+            if name not in entries:
+                try:
+                    entries[name] = ScheduleEntry(name, Domain(name))
+                except ValueError as error:
+                    raise ValueError(f"adapter {name!r} has no simulator instance in the project") from error
+        covered = {entry.domain for entry in entries.values()}
+        for domain in Domain:
+            if domain not in covered and domain.value not in entries:
+                entries[domain.value] = ScheduleEntry(domain.value, domain)
+        return list(entries.values())
 
     def run(
         self,
@@ -71,7 +93,8 @@ class CoSimulationOrchestrator:
                 macro_start = self.current_time
                 macro_end = min(macro_start + macro, self.project.duration_seconds)
                 for activation in self.scheduler.activations(macro_start, macro_end):
-                    self._activate(activation.domain, activation.time_seconds, activation.step_seconds)
+                    self._activate(activation.instance or activation.domain.value, activation.domain,
+                                   activation.time_seconds, activation.step_seconds)
                 self.current_time = macro_end
                 self._commit_history()
                 row = self._row(self.current_time)
@@ -95,13 +118,13 @@ class CoSimulationOrchestrator:
             self.write_csv(output_csv, rows)
         return rows
 
-    def _activate(self, domain: Domain, now: float, step_seconds: float) -> None:
+    def _activate(self, instance: str, domain: Domain, now: float, step_seconds: float) -> None:
         self._apply_couplings_iterative(domain)
-        adapter = self.adapters.get(domain)
+        adapter = self.adapters.get(instance)
         if adapter is None:
             return
         result = adapter.step(now, step_seconds, self._adapter_inputs())
-        self.activation_count[domain] += 1
+        self.activation_count[instance] += 1
         for name, value in result.outputs.items():
             signal = self.project.signals.get(name)
             if signal is None:
@@ -203,7 +226,7 @@ class CoSimulationOrchestrator:
             "history": {name: list(values) for name, values in self.history.items()},
             "events": self.events.snapshot(),
             "adapters": self.manager.checkpoint(),
-            "activation_count": {domain.value: count for domain, count in self.activation_count.items()},
+            "activation_count": dict(self.activation_count),
         }
 
     def restore(self, state: Mapping[str, Any]) -> None:
@@ -223,8 +246,8 @@ class CoSimulationOrchestrator:
                 self.history[name].extend(float(item) for item in items)
         self.events.restore(list(state.get("events", [])))
         self.manager.restore(dict(state.get("adapters", {})))
-        self.activation_count = defaultdict(int, {
-            Domain(name): int(count) for name, count in dict(state.get("activation_count", {})).items()
+        self.activation_count = InstanceCounter({
+            name: int(count) for name, count in dict(state.get("activation_count", {})).items()
         })
 
     def _max_delay_for(self, signal: str) -> int:

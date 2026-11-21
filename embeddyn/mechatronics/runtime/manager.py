@@ -5,49 +5,63 @@ from typing import Mapping
 
 from ..adapters.base import SimulatorAdapter
 from ..model import Domain
+from .instances import InstanceMap
 
 
 @dataclass(frozen=True)
 class AdapterHealth:
-    domain: Domain
+    domain: Domain | None
     healthy: bool
     details: dict[str, object]
+    instance: str = ""
 
 
 class AdapterManager:
-    def __init__(self, adapters: Mapping[Domain, SimulatorAdapter]) -> None:
-        self.adapters = dict(adapters)
-        self.started: list[Domain] = []
+    """Lifecycle of the adapters, keyed by simulator instance name (Domain keys accepted)."""
+
+    def __init__(self, adapters: Mapping[object, SimulatorAdapter], domains: Mapping[str, Domain] | None = None) -> None:
+        self.adapters = InstanceMap(adapters)
+        self.domains = dict(domains or {})
+        self.started: list[str] = []
+
+    def _domain(self, name: str) -> Domain | None:
+        if name in self.domains:
+            return self.domains[name]
+        try:
+            return Domain(name)
+        except ValueError:
+            return None
 
     def start_all(self, initial_signals: Mapping[str, float]) -> None:
         try:
-            for domain, adapter in self.adapters.items():
-                adapter.prepare({"domain": domain.value})
+            for name, adapter in self.adapters.items():
+                domain = self._domain(name)
+                adapter.prepare({"domain": domain.value if domain else None, "instance": name})
                 adapter.start(initial_signals)
-                self.started.append(domain)
+                self.started.append(name)
         except Exception:
             self.stop_all()
             raise
 
     def stop_all(self) -> None:
-        for domain in reversed(self.started):
+        for name in reversed(self.started):
             try:
-                self.adapters[domain].stop()
+                self.adapters[name].stop()
             except Exception:
                 pass
         self.started.clear()
 
     def health(self) -> list[AdapterHealth]:
         result = []
-        for domain, adapter in self.adapters.items():
+        for name, adapter in self.adapters.items():
             details = adapter.health()
-            result.append(AdapterHealth(domain, bool(details.get("healthy", False)), details))
+            result.append(AdapterHealth(self._domain(name), bool(details.get("healthy", False)), details, name))
         return result
 
     def checkpoint(self) -> dict[str, object]:
-        return {domain.value: adapter.checkpoint() for domain, adapter in self.adapters.items()}
+        return {name: adapter.checkpoint() for name, adapter in self.adapters.items()}
 
     def restore(self, state: Mapping[str, object]) -> None:
-        for domain, adapter in self.adapters.items():
-            if domain.value in state:
-                adapter.restore(state[domain.value])
+        for name, adapter in self.adapters.items():
+            if name in state:
+                adapter.restore(state[name])
