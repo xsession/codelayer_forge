@@ -57,3 +57,14 @@ Implemented worker registration, heartbeats, capability matching, persistent pri
 - database schema version 3 for datasets, calibrations, and reports
 
 See `PHASE6_COMPLETION.md` for commands, implementation details, and remaining maturation work.
+
+
+## Roadmap phase R1: Renode firmware-in-the-loop (working, hardening)
+
+- External Control API client (`adapters/renode_api.py`) for the `custom-cores` Renode branch
+- `RenodeAdapter`: virtual-time stepping with RunFor, PWM duty from GPIO edge events, ADC/GPIO/register I/O
+- STM32_ADC `IADC` patch; example `dc-motor-renode.yaml`; fake-server tests
+- Validated on a real custom-cores build (`tools/renode/build-custom-cores.sh`) with the reference STM32 firmware
+  (`examples/mechatronics/firmware/motor-speed-control`); opt-in test `tests/mechatronics/test_renode_real.py`
+
+See [RENODE.md](RENODE.md), [NGSPICE.md](NGSPICE.md), [TUNING.md](TUNING.md), [INSTANCES_AND_FMI.md](INSTANCES_AND_FMI.md), [VERIFICATION.md](VERIFICATION.md), [ESTIMATION.md](ESTIMATION.md), [TOLERANCE.md](TOLERANCE.md) and [ROADMAP.md](ROADMAP.md).

@@ -1,6 +1,7 @@
 [submodule "externals/renode"]
 	path = externals/renode
 	url = https://github.com/xsession/renode.git
+	branch = custom-cores
 [submodule "externals/openFPGALoader"]
 	path = externals/openFPGALoader
 	url = https://github.com/xsession/openFPGALoader.git

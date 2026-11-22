@@ -77,6 +77,8 @@ class WorkerAgent:
                 "output_root": str(output_root),
                 "parameter_overrides": arguments.get("parameter_overrides", {}),
             }
+            if returncode == 0 and not cancelled:
+                result["metrics"] = _run_metrics(stdout, arguments.get("metrics"))
             if cancelled:
                 self.coordinator.cancel_job(job_id, self.worker_id, result)
             elif returncode == 0:
@@ -97,3 +99,26 @@ class WorkerAgent:
                 return
             if job is None:
                 time.sleep(self.poll_interval_seconds)
+
+
+def _run_metrics(stdout: str, wanted: Any) -> dict[str, Any]:
+    """Metrics from the JSON summary `mechatronics run` prints last, optionally
+    narrowed to the experiment's declared metric names."""
+    start = 0 if stdout.lstrip().startswith("{") else stdout.rfind("\n{") + 1
+    try:
+        summary = json.loads(stdout[start:])
+    except (ValueError, TypeError):
+        return {}
+    metrics = dict(summary.get("metrics") or {}) if isinstance(summary, dict) else {}
+    if not wanted:
+        return metrics
+    from ..metrics import select_metrics
+    selected: dict[str, Any] = {}
+    for name in wanted:
+        try:
+            selected.update(select_metrics(metrics, [name]))
+        except KeyError as error:
+            selected[name] = None
+            selected.setdefault("_errors", []).append(str(error.args[0]))
+    return selected
+

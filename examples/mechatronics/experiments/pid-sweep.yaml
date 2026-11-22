@@ -17,6 +17,7 @@ variables:
       scale: logarithmic
 max_jobs: 100
 metrics:
-  - settling_time
-  - overshoot
-  - peak_current
+  - speed.settling_time
+  - speed.overshoot
+  - speed.iae
+  - current.peak

@@ -12,6 +12,7 @@ from .factory import build_adapters
 from .kicad import KiCadBridge
 from .catalog import ComponentCatalog
 from .integration import validate_integrations
+from .metrics import compute_metrics, parse_metric_specs, select_metrics
 from .model import MechatronicProject
 from .orchestrator import CoSimulationOrchestrator
 from .runtime import CheckpointManager, verify_replay
@@ -101,6 +102,9 @@ def run_project(
         csv_export = None
         if output is not None:
             csv_export = export_telemetry_csv(writer.path, output.resolve())
+        metrics = compute_metrics(rows, parse_metric_specs(project.metrics)) if project.metrics else {}
+        if metrics:
+            (compiled.directory / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
         compiler.update_status(
             compiled,
             "completed",
@@ -113,8 +117,9 @@ def run_project(
             },
             csv_export=str(csv_export) if csv_export else None,
             steps=len(rows),
+            metrics=metrics,
             runtime={
-                "activation_count": {domain.value: count for domain, count in runtime.activation_count.items()},
+                "activation_count": dict(runtime.activation_count),
                 "isolated_adapters": isolate_adapters,
                 "resumed_from": str(resume_from) if resume_from else None,
             },
@@ -133,9 +138,139 @@ def run_project(
         "database": str(compiled.database_path),
         "manifest": str(compiled.manifest_path),
         "final": rows[-1] if rows else {},
-        "activation_count": {domain.value: count for domain, count in runtime.activation_count.items()},
+        "metrics": metrics,
+        "activation_count": dict(runtime.activation_count),
         "isolated_adapters": isolate_adapters,
     }, indent=2))
+
+
+@mechatronics_app.command("metrics")
+def metrics_command(
+    project_file: Path = typer.Argument(..., exists=True, dir_okay=False),
+    run_csv: Path = typer.Argument(..., exists=True, dir_okay=False, help="CSV from `run --output`."),
+) -> None:
+    """Compute the project's declared metrics from an exported run CSV."""
+    import csv as _csv
+    project = MechatronicProject.load(project_file)
+    with run_csv.open(newline="", encoding="utf-8") as handle:
+        rows = [{key: float(value) for key, value in row.items() if value not in ("", None)}
+                for row in _csv.DictReader(handle)]
+    typer.echo(json.dumps(compute_metrics(rows, parse_metric_specs(project.metrics)), indent=2, sort_keys=True))
+
+
+@mechatronics_app.command("tune")
+def tune_command(
+    spec_file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Tuning spec (YAML)."),
+    output: Path = typer.Option(Path(".embeddyn/tuning/result.json"), "--output", "-o"),
+    max_evaluations: Optional[int] = typer.Option(None, "--max-evaluations"),
+) -> None:
+    """Tune project parameters by repeated co-simulation (bounded Nelder-Mead)."""
+    from .tuning import load_tuning_spec, tune, write_result
+    spec = load_tuning_spec(spec_file)
+    if max_evaluations is not None:
+        spec.max_evaluations = max_evaluations
+
+    def progress(record):
+        values = ", ".join(f"{name}={value:.5g}" for name, value in record["parameters"].items())
+        note = record.get("error") or "; ".join(record["violations"]) or "ok"
+        typer.echo(f"[{record['evaluation']:3d}] objective={record['objective']:.6g}  {values}  ({note}, {record['seconds']} s)", err=True)
+
+    result = tune(spec, progress)
+    write_result(result, output)
+    typer.echo(json.dumps({"output": str(output), "evaluations": result["evaluations"], "feasible": result["feasible"],
+                           "initial": {"parameters": result["initial"]["parameters"], "objective": result["initial"]["objective"]},
+                           "best": {key: result["best"][key] for key in ("parameters", "objective", "violations")}},
+                          indent=2, default=lambda value: None))
+
+
+@mechatronics_app.command("verify")
+def verify_command(
+    project_file: Path = typer.Argument(..., exists=True, dir_okay=False),
+    check: Optional[list[str]] = typer.Option(None, "--check", help="Run only these checks: energy, convergence, golden, scenarios."),
+    mock: bool = typer.Option(False, help="Use the built-in simulators for the core domains."),
+    update_golden: bool = typer.Option(False, "--update-golden", help="Rewrite the golden waveform file."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write the JSON report here."),
+) -> None:
+    """Verify a model: energy balance, step-size convergence, golden waveforms, scenario matrix.
+    Exits with status 1 when a check fails."""
+    from .verification import verify
+
+    def progress(name, result):
+        if name == "scenario":
+            note = result.get("error") or ", ".join(
+                f"{c['metric']}={c['value'] if c['value'] is None else round(c['value'], 4)}" for c in result["checks"])
+            typer.echo(f"  scenario {result['name']}: {'PASS' if result['passed'] else 'FAIL'} ({note})", err=True)
+        else:
+            typer.echo(f"{name}: {'PASS' if result['passed'] else 'FAIL'}", err=True)
+
+    report = verify(project_file, mock=mock, only=check, update_golden=update_golden, progress=progress)
+    text = json.dumps(report, indent=2, default=lambda value: None)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(text, encoding="utf-8")
+    typer.echo(text)
+    if not report["passed"]:
+        raise typer.Exit(1)
+
+
+@mechatronics_app.command("estimate")
+def estimate_command(
+    spec_file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Estimation spec (YAML)."),
+    output: Path = typer.Option(Path(".embeddyn/estimation/result.json"), "--output", "-o"),
+) -> None:
+    """Estimate physical parameters from bench measurements (Levenberg-Marquardt, 95 % confidence intervals)."""
+    from .estimation import estimate, load_estimation_spec, write_result
+    spec = load_estimation_spec(spec_file)
+
+    def progress(record):
+        values = ", ".join(f"{name}={value:.5g}" for name, value in record["parameters"].items())
+        typer.echo(f"[{record['iteration']:2d}] cost={record['cost']:.6g}  {values}  ({record['evaluations']} runs)", err=True)
+
+    result = estimate(spec, progress)
+    write_result(result, output)
+    summary = {name: {"estimate": item["estimate"], "ci95": item["ci95"], "at_bound": item["at_bound"]}
+               for name, item in result["parameters"].items()}
+    typer.echo(json.dumps({"output": str(output), "parameters": summary, "fit": result["fit"],
+                           "cost": result["cost"], "evaluations": result["evaluations"]},
+                          indent=2, default=lambda value: None))
+
+
+@mechatronics_app.command("tolerance")
+def tolerance_command(
+    spec_file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Tolerance spec (YAML)."),
+    output: Path = typer.Option(Path(".embeddyn/tolerance/result.json"), "--output", "-o"),
+    workers: Optional[int] = typer.Option(None, "--workers", help="Parallel processes (overrides the spec)."),
+    samples: Optional[int] = typer.Option(None, "--samples", help="Monte Carlo samples (overrides the spec)."),
+) -> None:
+    """Monte Carlo yield and Sobol sensitivity over component tolerances."""
+    from .tolerance import analyse, load_tolerance_spec, write_result
+    spec = load_tolerance_spec(spec_file)
+    if workers is not None:
+        spec.workers = max(1, workers)
+    if samples is not None and spec.monte_carlo is not None:
+        spec.monte_carlo["samples"] = samples
+    step = {"monte_carlo": 0, "sensitivity": 0}
+
+    def progress(phase, index, total):
+        if index == total or index - step[phase] >= max(1, total // 10):
+            step[phase] = index
+            typer.echo(f"{phase}: {index}/{total} runs", err=True)
+
+    result = analyse(spec, progress)
+    write_result(result, output)
+    summary = {"output": str(output), "seconds": result["seconds"]}
+    if "monte_carlo" in result:
+        mc = result["monte_carlo"]
+        summary["monte_carlo"] = {key: mc.get(key) for key in ("samples", "errors", "yield", "yield_ci95", "limits")}
+        summary["monte_carlo"]["outputs"] = {name: {k: v for k, v in stats.items() if k in ("mean", "std", "p05", "p95", "missing")}
+                                             for name, stats in mc["outputs"].items()}
+    if "sensitivity" in result:
+        summary["sensitivity"] = {name: ({"ranking": item["ranking"],
+                                          "total": {p: round(i["total"], 3) for p, i in item["indices"].items()},
+                                          "first_order": {p: round(i["first_order"], 3) for p, i in item["indices"].items()}}
+                                         if "indices" in item else item)
+                                  for name, item in result["sensitivity"]["outputs"].items()}
+    typer.echo(json.dumps(summary, indent=2, default=lambda value: None))
 
 
 @mechatronics_app.command("validate")

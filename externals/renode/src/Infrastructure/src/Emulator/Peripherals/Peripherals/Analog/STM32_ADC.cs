@@ -11,6 +11,7 @@ using Antmicro.Renode.Core;
 using Antmicro.Renode.Core.Structure.Registers;
 using Antmicro.Renode.Exceptions;
 using Antmicro.Renode.Logging;
+using Antmicro.Renode.Peripherals.Sensor;
 using Antmicro.Renode.Peripherals.Timers;
 using Antmicro.Renode.Time;
 
@@ -36,7 +37,7 @@ namespace Antmicro.Renode.Peripherals.Analog
     // * Sampling time (time is fixed)
     // * Discontinuous mode
     // * Multi-ADC (i.e. Dual/Triple) mode
-    public class STM32_ADC : BasicDoubleWordPeripheral, IKnownSize
+    public class STM32_ADC : BasicDoubleWordPeripheral, IADC, IKnownSize
     {
         public STM32_ADC(IMachine machine) : base(machine)
         {
@@ -63,6 +64,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 c.Reset();
             }
+            System.Array.Clear(lastSetValues, 0, lastSetValues.Length);
         }
 
         public void FeedSample(uint value, uint channelIdx, int repeat = 1)
@@ -81,6 +83,25 @@ namespace Antmicro.Renode.Peripherals.Analog
                 channels[channelIdx].FeedSample(parsedSamples, repeat);
             }
         }
+
+        // IADC: lets External Control / co-simulation clients drive a channel.
+        // The value is a raw conversion result (counts), returned by every
+        // subsequent conversion of that channel until changed.
+        public void SetADCValue(int channel, uint value)
+        {
+            if(IsValidChannel((uint)channel))
+            {
+                lastSetValues[channel] = value;
+                channels[channel].FeedSample(value, repeat: -1);
+            }
+        }
+
+        public uint GetADCValue(int channel)
+        {
+            return IsValidChannel((uint)channel) ? lastSetValues[channel] : 0;
+        }
+
+        public int ADCChannelCount => NumberOfChannels;
 
         public long Size => 0x50;
 
@@ -311,6 +332,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private readonly LimitTimer samplingTimer;
         private readonly IValueRegisterField[] regularSequence = new IValueRegisterField[19];
         private readonly ADCChannel[] channels;
+        private readonly uint[] lastSetValues = new uint[NumberOfChannels];
 
         private enum Registers
         {

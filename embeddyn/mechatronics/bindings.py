@@ -79,16 +79,29 @@ class BindingManifest:
 
 def validate_project_bindings(project: MechatronicProject) -> dict[str, Any]:
     reports: list[dict[str, Any]] = []
-    for domain, config in project.simulators.items():
+    for instance_name, config in project.declared_instances().items():
+        domain = config.domain
         binding_name = config.options.get("bindings")
         if not binding_name:
             continue
         path = project.resolve(str(binding_name))
         if path is None or not path.exists():
-            reports.append({"domain": domain.value, "path": str(path), "errors": ["binding file does not exist"]})
+            reports.append({"instance": instance_name, "domain": domain.value, "path": str(path), "errors": ["binding file does not exist"]})
+            continue
+        backend = str(config.options.get("backend", domain.value))
+        if backend == "ngspice-shared":
+            from .adapters.ngspice_shared import load_ngspice_bindings
+            try:
+                spice = load_ngspice_bindings(path)
+                known = set(project.signals) | set(project.parameters)
+                errors = [f"ngspice binding for unknown signal: {b.signal}"
+                          for b in [*spice.inputs, *spice.outputs] if b.signal not in known]
+                count = len(spice.inputs) + len(spice.outputs)
+            except (OSError, ValueError) as exc:
+                errors, count = [str(exc)], 0
+            reports.append({"instance": instance_name, "domain": domain.value, "path": str(path), "bindings": count, "errors": errors})
             continue
         manifest = BindingManifest.load(path)
-        backend = str(config.options.get("backend", domain.value))
-        reports.append({"domain": domain.value, "path": str(path), "bindings": len(manifest.bindings), "errors": manifest.validate(project, backend)})
+        reports.append({"instance": instance_name, "domain": domain.value, "path": str(path), "bindings": len(manifest.bindings), "errors": manifest.validate(project, backend)})
     errors = [error for report in reports for error in report.get("errors", [])]
     return {"valid": not errors, "reports": reports, "errors": errors}

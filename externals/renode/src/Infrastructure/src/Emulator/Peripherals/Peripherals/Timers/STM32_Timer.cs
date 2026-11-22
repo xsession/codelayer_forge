@@ -96,7 +96,14 @@ namespace Antmicro.Renode.Peripherals.Timers
                 ccTimers[j] = new LimitTimer(machine.ClockSource, frequency, this, String.Format("cctimer{0}", j + 1), limit: initialLimit, eventEnabled: true, direction: Direction.Ascending, enabled: false, autoUpdate: false, workMode: WorkMode.OneShot);
                 ccTimers[j].LimitReached += delegate
                 {
-                    switch(outputCompareModes[j].Value)
+                    // This model's period is ARR ticks, so a compare at CCR >= ARR coincides
+                    // with the update event. Real hardware keeps a PWM output active for the
+                    // whole period there (CCR > ARR) or all but one tick (CCR = ARR); only
+                    // the compare flag/interrupt is raised. Without this guard the match can
+                    // land after the update and clear the output for a full period.
+                    var pwmAtOrBeyondReload = ccTimers[j].Limit >= Limit
+                        && (outputCompareModes[j].Value == OutputCompareMode.PwmMode1 || outputCompareModes[j].Value == OutputCompareMode.PwmMode2);
+                    switch(pwmAtOrBeyondReload ? OutputCompareMode.Frozen : outputCompareModes[j].Value)
                     {
                     case OutputCompareMode.SetActiveOnMatch:
                         Connections[j].Blink(); // high pulse

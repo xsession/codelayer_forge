@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -103,6 +104,27 @@ class SimulatorConfig:
     executable: str | None = None
     model: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
+    # Named-instance fields. Legacy `simulators:` entries get name = domain.
+    name: str = ""
+    domain: "Domain | None" = None
+    step_seconds: float | None = None
+
+
+CORE_DOMAINS = ("firmware", "electrical", "mechanical")
+_INSTANCE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+
+
+def _parse_simulator(name: str, domain: "Domain", spec: dict[str, Any]) -> SimulatorConfig:
+    step = spec.get("step", spec.get("step_seconds"))
+    return SimulatorConfig(
+        enabled=bool(spec.get("enabled", True)),
+        executable=spec.get("executable"),
+        model=spec.get("model"),
+        options=dict(spec.get("options") or {}),
+        name=name,
+        domain=domain,
+        step_seconds=None if step is None else Quantity.parse(step, "s").value,
+    )
 
 
 @dataclass(frozen=True)
@@ -149,6 +171,38 @@ class MechatronicProject:
     parameter_provenance: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     component_definitions: dict[str, dict[str, Any]] = field(default_factory=dict)
     component_instances: dict[str, dict[str, Any]] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    instances: dict[str, SimulatorConfig] = field(default_factory=dict)
+    declares_instances: bool = False
+    verification: dict[str, Any] = field(default_factory=dict)
+
+    def declared_instances(self) -> dict[str, SimulatorConfig]:
+        """Instances written in the project file (legacy domains included), no defaults."""
+        result = dict(self.instances)
+        for domain, config in self.simulators.items():
+            if config.domain is None:
+                config.domain, config.name = domain, domain.value
+            result.setdefault(config.name or domain.value, config)
+        return result
+
+    def simulator_instances(self) -> dict[str, SimulatorConfig]:
+        """Every simulator instance in declaration order, keyed by name.
+
+        Projects without an `instances:` section keep their historic
+        behaviour: one instance per configured domain, plus a default (auto
+        backend) instance for each core domain that isn't configured.
+        """
+        result = dict(self.instances)
+        for domain, config in self.simulators.items():
+            if config.domain is None:
+                config.domain, config.name = domain, domain.value
+            result.setdefault(config.name or domain.value, config)
+        if not self.declares_instances:
+            present = {config.domain for config in result.values()}
+            for name in CORE_DOMAINS:
+                if Domain(name) not in present:
+                    result[name] = SimulatorConfig(name=name, domain=Domain(name))
+        return result
 
     @classmethod
     def load(cls, path: Path) -> "MechatronicProject":
@@ -173,16 +227,28 @@ class MechatronicProject:
             )
         couplings = [_parse_coupling(item) for item in (raw.get("couplings") or [])]
         sims: dict[Domain, SimulatorConfig] = {}
+        simulator_instances: dict[str, SimulatorConfig] = {}
         for key, spec in (raw.get("simulators") or {}).items():
-            spec = spec or {}
-            sims[Domain(key)] = SimulatorConfig(
-                enabled=bool(spec.get("enabled", True)),
-                executable=spec.get("executable"),
-                model=spec.get("model"),
-                options=dict(spec.get("options") or {}),
-            )
+            domain = Domain(key)
+            sims[domain] = simulator_instances[domain.value] = _parse_simulator(domain.value, domain, spec or {})
+        for name, spec in (raw.get("instances") or {}).items():
+            spec = dict(spec or {})
+            if not isinstance(name, str) or not _INSTANCE_NAME.match(name):
+                raise ValueError(f"invalid simulator instance name: {name!r}")
+            if name in simulator_instances:
+                raise ValueError(f"duplicate simulator instance name: {name}")
+            if "domain" not in spec:
+                raise ValueError(f"simulator instance {name} needs a domain")
+            domain = Domain(spec["domain"])
+            simulator_instances[name] = _parse_simulator(name, domain, spec)
+            if name == domain.value:
+                sims[domain] = simulator_instances[name]
         step_seconds = Quantity.parse(raw.get("step_seconds", raw.get("scheduler", {}).get("macro_step", 0.001)), "s").value
         scheduler = _parse_scheduler(raw.get("scheduler") or {}, step_seconds)
+        if (any(config.step_seconds is not None for config in simulator_instances.values())
+                and "algorithm" not in (raw.get("scheduler") or {}) and scheduler.algorithm == "deterministic-fixed-step"):
+            from dataclasses import replace as _replace
+            scheduler = _replace(scheduler, algorithm="multirate-fixed-step")
         parameters: dict[str, Quantity] = {}
         provenance: dict[str, list[dict[str, Any]]] = {}
         for name, value in (raw.get("parameters") or {}).items():
@@ -219,6 +285,10 @@ class MechatronicProject:
             parameter_provenance=provenance,
             component_definitions=definitions,
             component_instances=instances,
+            metrics=dict(raw.get("metrics") or {}),
+            instances=simulator_instances,
+            declares_instances=bool(raw.get("instances")),
+            verification=dict(raw.get("verification") or {}),
         )
         project.validate()
         return project
@@ -226,6 +296,19 @@ class MechatronicProject:
     def validate(self) -> None:
         if self.schema_version not in {1, 2}:
             raise ValueError(f"unsupported schema_version: {self.schema_version}")
+        for name, config in self.simulator_instances().items():
+            if config.step_seconds is not None:
+                if not math.isfinite(config.step_seconds) or config.step_seconds <= 0:
+                    raise ValueError(f"step for simulator instance {name} must be a finite positive number")
+                ratio = self.step_seconds / config.step_seconds
+                if abs(ratio - round(ratio)) > 1e-9:
+                    raise ValueError(f"step for simulator instance {name} must divide the macro step")
+        if self.metrics:
+            from .metrics import parse_metric_specs
+            for spec in parse_metric_specs(self.metrics).values():
+                for name in (spec.signal, spec.target if isinstance(spec.target, str) else None):
+                    if name and name not in self.signals:
+                        raise ValueError(f"metric {spec.name} references unknown signal {name}")
         if not math.isfinite(self.step_seconds) or self.step_seconds <= 0:
             raise ValueError("step_seconds must be a finite positive number")
         if not math.isfinite(self.duration_seconds) or self.duration_seconds <= 0:

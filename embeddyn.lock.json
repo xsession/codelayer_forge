@@ -26,9 +26,9 @@
         "url": "https://github.com/xsession/openocd.git"
       },
       "renode-source": {
-        "revision": "HEAD",
+        "revision": "custom-cores",
         "source": "bundled",
-        "tree_sha256": "5e83237a82c3148b673e7920f8854ccfa356ce21b550b080249899884c866be3",
+        "tree_sha256": "54134d64e187627cf98e05c4f5cb4626dccc08492c6d60b91cd7e77982135d73",
         "url": "https://github.com/xsession/renode.git"
       }
     },

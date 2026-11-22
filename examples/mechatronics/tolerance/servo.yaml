@@ -1,0 +1,21 @@
+# Tolerance analysis of the geared servo: how do component spreads affect
+# overshoot, settling, gearbox load and heating, and which spreads matter?
+# Run: embeddyn mechatronics tolerance examples/mechatronics/tolerance/servo.yaml
+project: ../servo-drivetrain.yaml
+duration: 1.0
+seed: 1
+workers: 8
+parameters:
+  motor.resistance_20c: {nominal: 2.0, tolerance: 0.05, distribution: normal}        # winding, +-5 % (3 sigma)
+  drivetrain.backlash: {distribution: uniform, minimum: 0.002, maximum: 0.008}      # new to worn gearbox [rad]
+  drivetrain.load_inertia: {nominal: 1.2, tolerance: 0.10, distribution: uniform}   # load mass spread
+  drivetrain.coulomb_friction: {distribution: triangular, minimum: 0.15, mode: 0.25, maximum: 0.4}
+  mechanical.load_torque: {distribution: uniform, minimum: 0.2, maximum: 0.4}       # process load [N*m]
+  electrical.supply_voltage: {distribution: normal, mean: 24.0, sigma: 0.4}         # supply [V]
+outputs: [speed.overshoot, speed.settling_time, shaft.peak, temperature.max, energy.integral]
+limits:
+  - {metric: speed.overshoot, max: 10.0}
+  - {metric: speed.settling_time, max: 0.6}
+  - {metric: shaft.peak, max: 20.0}
+monte_carlo: {samples: 200, sampling: lhs}
+sensitivity: {base_samples: 64, bootstrap: 200}
