@@ -235,6 +235,44 @@ def estimate_command(
                           indent=2, default=lambda value: None))
 
 
+@mechatronics_app.command("tolerance")
+def tolerance_command(
+    spec_file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Tolerance spec (YAML)."),
+    output: Path = typer.Option(Path(".embeddyn/tolerance/result.json"), "--output", "-o"),
+    workers: Optional[int] = typer.Option(None, "--workers", help="Parallel processes (overrides the spec)."),
+    samples: Optional[int] = typer.Option(None, "--samples", help="Monte Carlo samples (overrides the spec)."),
+) -> None:
+    """Monte Carlo yield and Sobol sensitivity over component tolerances."""
+    from .tolerance import analyse, load_tolerance_spec, write_result
+    spec = load_tolerance_spec(spec_file)
+    if workers is not None:
+        spec.workers = max(1, workers)
+    if samples is not None and spec.monte_carlo is not None:
+        spec.monte_carlo["samples"] = samples
+    step = {"monte_carlo": 0, "sensitivity": 0}
+
+    def progress(phase, index, total):
+        if index == total or index - step[phase] >= max(1, total // 10):
+            step[phase] = index
+            typer.echo(f"{phase}: {index}/{total} runs", err=True)
+
+    result = analyse(spec, progress)
+    write_result(result, output)
+    summary = {"output": str(output), "seconds": result["seconds"]}
+    if "monte_carlo" in result:
+        mc = result["monte_carlo"]
+        summary["monte_carlo"] = {key: mc.get(key) for key in ("samples", "errors", "yield", "yield_ci95", "limits")}
+        summary["monte_carlo"]["outputs"] = {name: {k: v for k, v in stats.items() if k in ("mean", "std", "p05", "p95", "missing")}
+                                             for name, stats in mc["outputs"].items()}
+    if "sensitivity" in result:
+        summary["sensitivity"] = {name: ({"ranking": item["ranking"],
+                                          "total": {p: round(i["total"], 3) for p, i in item["indices"].items()},
+                                          "first_order": {p: round(i["first_order"], 3) for p, i in item["indices"].items()}}
+                                         if "indices" in item else item)
+                                  for name, item in result["sensitivity"]["outputs"].items()}
+    typer.echo(json.dumps(summary, indent=2, default=lambda value: None))
+
+
 @mechatronics_app.command("validate")
 def validate_project(project_file: Path = typer.Argument(..., exists=True, dir_okay=False)) -> None:
     project = MechatronicProject.load(project_file)

@@ -15,6 +15,9 @@ parameters:
   controller.anti_windup: 1
   drivetrain.backlash: {value: 0.004, unit: rad}
   thermal.initial_temperature: 25.0
+  drivetrain.load_inertia: 1.2
+  drivetrain.coulomb_friction: 0.25
+  motor.resistance_20c: 2.0
 
 simulators:
   firmware:
@@ -32,9 +35,9 @@ simulators:
         backlash: "@drivetrain.backlash"
         shaft_stiffness: 3000
         shaft_damping: 3
-        load_inertia: 1.2
+        load_inertia: "@drivetrain.load_inertia"
         load_damping: 0.05
-        coulomb_friction: 0.25
+        coulomb_friction: "@drivetrain.coulomb_friction"
         static_friction: 0.4
         stribeck_speed: 0.05
         friction_speed: 0.002
@@ -56,7 +59,7 @@ simulators:
     options:
       backend: python
       max_step: 1.0e-3
-      parameters: {thermal_resistance: 3.0, thermal_capacitance: 10.0, resistance_20c: 2.0, initial_temperature: "@thermal.initial_temperature"}
+      parameters: {thermal_resistance: 3.0, thermal_capacitance: 10.0, resistance_20c: "@motor.resistance_20c", initial_temperature: "@thermal.initial_temperature"}
       inputs: {current: electrical.motor_current, ambient: thermal.ambient}
       outputs: {temperature: thermal.winding_temperature, resistance: thermal.winding_resistance, copper_loss: thermal.copper_loss}
 
