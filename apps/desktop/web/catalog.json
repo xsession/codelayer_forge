@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "platformApiVersion": "0.1.0",
-  "generatedAt": "2026-11-23T12:46:49.142129+00:00",
+  "generatedAt": "2026-11-23T13:55:32.494331+00:00",
   "plugins": [
     {
       "root": "plugins/embeddyn-cosim",
@@ -12,7 +12,7 @@
         "name": "embeddyn Co-simulation",
         "version": "0.1.0",
         "publisher": "CodeLayer",
-        "description": "Firmware (Renode), electronics (ngspice), mechanics and FMU co-simulation with the embeddyn engine: run, verify, tune, tolerance analysis, the Lab GUI and Renode bindings generated from pin plans.",
+        "description": "Firmware (Renode), electronics (ngspice), mechanics (MuJoCo, python plants) and FMU co-simulation with the embeddyn engine: run, verify, tune, tolerance analysis, FMU export and checks, the Lab GUI and Renode bindings generated from pin plans.",
         "runtime": "python",
         "entrypoint": "embeddyn_cosim.plugin:create_plugin",
         "platform_api": ">=0.1.0,<0.2.0",
@@ -32,7 +32,8 @@
         "provides": {
           "codelayer.simulation.cosim": "1.0.0",
           "codelayer.simulation.analysis": "1.0.0",
-          "codelayer.simulation.renode-bindings": "1.0.0"
+          "codelayer.simulation.renode-bindings": "1.0.0",
+          "codelayer.simulation.fmi": "1.0.0"
         },
         "permissions": {
           "workspace_read": true,
@@ -64,6 +65,16 @@
             {
               "id": "embeddyn.validateProject",
               "title": "Check Co-simulation Project",
+              "category": "Simulation"
+            },
+            {
+              "id": "embeddyn.exportFmu",
+              "title": "Export Plant as FMU",
+              "category": "Simulation"
+            },
+            {
+              "id": "embeddyn.checkFmu",
+              "title": "Check FMU",
               "category": "Simulation"
             },
             {

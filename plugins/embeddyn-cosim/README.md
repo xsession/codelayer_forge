@@ -10,10 +10,12 @@ capabilities that other plugins can call, the same way they call Route Core.
 | `codelayer.simulation.cosim` | `parts`, `open` (schematic graph), `validate`, `run` (`duration`, `mock`, `output` CSV) |
 | `codelayer.simulation.analysis` | `verify`, `tune`, `tolerance` |
 | `codelayer.simulation.renode-bindings` | `from_pin_plan` (Pin Configurator plan + device → Renode bindings) |
+| `codelayer.simulation.fmi` | `export` (python plant → FMI 3.0 FMU with state save/restore), `check` (FMPy validation + short run) |
 
 Commands: `embeddyn.runProject`, `embeddyn.validateProject`, `embeddyn.openLab` /
 `embeddyn.stopLab` (the Lab GUI on 127.0.0.1, returns its URL) and
-`embeddyn.bindingsFromPinPlan`.
+`embeddyn.bindingsFromPinPlan`, `embeddyn.exportFmu` and `embeddyn.checkFmu`.
+FMU export and checks need the engine's `fmi` extra (PythonFMU3, FMPy).
 
 ## Engine location
 

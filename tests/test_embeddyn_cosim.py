@@ -44,7 +44,8 @@ class EmbeddynPluginTests(unittest.TestCase):
         )
         self.assertFalse([r for r in responses if "error" in r], responses)
         capabilities = json.dumps(responses[1]["result"])
-        for name in ("codelayer.simulation.cosim", "codelayer.simulation.analysis", "codelayer.simulation.renode-bindings"):
+        for name in ("codelayer.simulation.cosim", "codelayer.simulation.analysis", "codelayer.simulation.renode-bindings",
+                     "codelayer.simulation.fmi"):
             self.assertIn(name, capabilities)
         self.assertTrue(responses[2]["result"]["valid"])
         run = responses[3]["result"]

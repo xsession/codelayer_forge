@@ -6,6 +6,8 @@ Capabilities:
 * ``codelayer.simulation.analysis``: verification, tuning, tolerance analysis.
 * ``codelayer.simulation.renode-bindings``: Renode bindings from a Pin
   Configurator pin plan (``embeddyn.mechatronics.pinplan``).
+* ``codelayer.simulation.fmi``: export plants as FMI 3.0 FMUs and check FMUs
+  (PythonFMU3 and FMPy, the engine's optional ``fmi`` extra).
 
 All paths in parameters are workspace-relative and go through the SDK's
 permission checks. Runs are synchronous: the platform's request/response
@@ -138,6 +140,28 @@ class RenodeBindingsService:
         return result
 
 
+class FmiService:
+    def __init__(self, context: Any) -> None:
+        self.context = context
+
+    def export(self, params: dict[str, Any]) -> dict[str, Any]:
+        """{plant: "module:Class" or workspace "file.py:Class", output: workspace dir, name?, parameters?,
+        input_start?, max_step?, check?}."""
+        from embeddyn.mechatronics.fmi_export import check_fmu, export_plant
+        output = self.context.workspace_path(str(params.get("output", "fmus")), write=True)
+        path = export_plant(str(params["plant"]), output, name=params.get("name"),
+                            parameters=params.get("parameters"), input_start=params.get("input_start"),
+                            max_step=float(params.get("max_step", 1e-4)), root=self.context.workspace_root)
+        result: dict[str, Any] = {"fmu": str(path.relative_to(self.context.workspace_root))}
+        if params.get("check", True):
+            result["check"] = check_fmu(path)
+        return result
+
+    def check(self, params: dict[str, Any]) -> dict[str, Any]:
+        from embeddyn.mechatronics.fmi_export import check_fmu
+        return check_fmu(self.context.workspace_path(str(params["path"])), stop_time=float(params.get("stop_time", 0.01)))
+
+
 class EmbeddynPlugin:
     def __init__(self) -> None:
         self.lab = None
@@ -149,12 +173,16 @@ class EmbeddynPlugin:
         self.cosim = CosimService(context)
         self.analysis = AnalysisService(context)
         self.bindings = RenodeBindingsService(context)
+        self.fmi = FmiService(context)
         context.services.register("codelayer.simulation.cosim", "1.0.0", self.cosim)
         context.services.register("codelayer.simulation.analysis", "1.0.0", self.analysis)
         context.services.register("codelayer.simulation.renode-bindings", "1.0.0", self.bindings)
+        context.services.register("codelayer.simulation.fmi", "1.0.0", self.fmi)
         context.commands.register("embeddyn.runProject", lambda args: self.cosim.run(args or {}))
         context.commands.register("embeddyn.validateProject", lambda args: self.cosim.validate(args or {}))
         context.commands.register("embeddyn.bindingsFromPinPlan", lambda args: self.bindings.from_pin_plan(args or {}))
+        context.commands.register("embeddyn.exportFmu", lambda args: self.fmi.export(args or {}))
+        context.commands.register("embeddyn.checkFmu", lambda args: self.fmi.check(args or {}))
         context.commands.register("embeddyn.openLab", self.open_lab)
         context.commands.register("embeddyn.stopLab", self.stop_lab)
         context.logger.info("embeddyn co-simulation activated (engine %s)", engine_root(context.plugin_root) or "installed")
