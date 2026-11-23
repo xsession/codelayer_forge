@@ -51,7 +51,9 @@ jobs:
         run: tools/renode/build-custom-cores.sh "$RENODE_WORK"
 
       - name: Build reference firmware
-        run: make -C examples/mechatronics/firmware/motor-speed-control
+        run: |
+          make -C examples/mechatronics/firmware/motor-speed-control
+          make -C examples/mechatronics/firmware/rc-servo-l476
 
       - name: Install Embeddyn
         run: pip install -e . pytest
@@ -60,7 +62,7 @@ jobs:
         run: |
           . "$RENODE_WORK/env.sh"
           export RENODE_BIN="$RENODE_WORK/src/renode"
-          pytest -q tests/mechatronics/test_renode_real.py tests/mechatronics/test_ngspice_shared.py -rs
+          pytest -q tests/mechatronics/test_renode_real.py tests/mechatronics/test_rc_servo_l476.py tests/mechatronics/test_ngspice_shared.py -rs
           embeddyn mechatronics run examples/mechatronics/dc-motor-full.yaml --output dc-motor-full.csv
 
       - uses: actions/upload-artifact@v4

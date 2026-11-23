@@ -17,7 +17,8 @@ Binding manifest (``options.bindings``)::
       - signal: firmware.measured_velocity
         endpoint: {object: sysbus.adc1, property: adc, channel: 0, scale: 100.0, direction: input}
 
-Output properties: ``gpio_duty``, ``gpio_state``, ``sysbus``, ``register_ratio``.
+Output properties: ``gpio_duty``, ``gpio_pulse_width``, ``gpio_state``, ``sysbus``,
+``register_ratio``.
 Input properties: ``adc``, ``gpio``, ``sysbus``.  See docs/mechatronics/RENODE.md.
 """
 from __future__ import annotations
@@ -36,7 +37,7 @@ from typing import Any, Mapping
 from .base import SimulatorAdapter, StepResult
 from .renode_api import GpioEvent, RenodeExternalControl
 
-OUTPUT_PROPERTIES = {"gpio_duty", "gpio_state", "sysbus", "register_ratio"}
+OUTPUT_PROPERTIES = {"gpio_duty", "gpio_pulse_width", "gpio_state", "sysbus", "register_ratio"}
 INPUT_PROPERTIES = {"adc", "gpio", "sysbus"}
 DEFAULT_RENODE_ARGS = ("--disable-gui", "--console", "--plain")
 # Monitor messages that mean the startup script failed and the server will never open.
@@ -78,6 +79,32 @@ class _DutyTracker:
         self.state = event.state
 
 
+@dataclass
+class _PulseTracker:
+    """Width of the last complete high pulse, held until the next one ends,
+    which is what an RC-servo or ESC input decoder sees."""
+    state: bool = False
+    rise_us: int | None = None
+    last_fall_us: int = 0
+    width_us: float = 0.0
+    pulses: int = 0
+
+    def on_event(self, event: GpioEvent) -> None:
+        if event.state and not self.state:
+            self.rise_us = event.timestamp_us
+        elif self.state and not event.state:
+            if self.rise_us is not None:
+                self.width_us = float(event.timestamp_us - self.rise_us)
+                self.pulses += 1
+            self.last_fall_us = event.timestamp_us
+        self.state = event.state
+
+    def value_us(self, now_us: int, timeout_us: float | None) -> float:
+        if timeout_us is not None and now_us - self.last_fall_us > timeout_us:
+            return 0.0      # signal lost
+        return self.width_us
+
+
 def load_renode_bindings(path: Path | str | None, default_machine: str | None,
                          inline: list[Mapping[str, Any]] | None = None) -> list[RenodeBinding]:
     """Load Renode bindings from a manifest file and/or inline option list."""
@@ -116,7 +143,7 @@ def load_renode_bindings(path: Path | str | None, default_machine: str | None,
             errors.append(f"{signal}: unsupported {direction} property {prop!r} (allowed: {', '.join(sorted(allowed))})")
         elif not machine:
             errors.append(f"{signal}: no Renode machine name (set 'machine' in the manifest or simulator options)")
-        elif prop in {"gpio_duty", "gpio_state", "gpio"} and ("pin" not in options or not peripheral):
+        elif prop in {"gpio_duty", "gpio_pulse_width", "gpio_state", "gpio"} and ("pin" not in options or not peripheral):
             errors.append(f"{signal}: {prop} requires 'object' (GPIO peripheral) and 'pin'")
         elif prop == "adc" and ("channel" not in options or not peripheral):
             errors.append(f"{signal}: adc requires 'object' (ADC peripheral) and 'channel'")
@@ -174,6 +201,7 @@ class RenodeAdapter(SimulatorAdapter):
         self._origin_us = 0
         self._now_us = 0
         self._duty: dict[str, _DutyTracker] = {}
+        self._pulses: dict[str, _PulseTracker] = {}
         self._window = (0, 0)
 
     # ------------------------------------------------------------------ lifecycle
@@ -211,6 +239,7 @@ class RenodeAdapter(SimulatorAdapter):
         self.client = self._connect()
         self._origin_us = self._now_us = self.client.get_time_us()
         self._duty.clear()
+        self._pulses.clear()
         for binding in self.bindings:
             if binding.property == "gpio_duty":
                 pin = _int(binding.opt("pin"))
@@ -219,6 +248,12 @@ class RenodeAdapter(SimulatorAdapter):
                 self._duty[binding.signal] = tracker
                 self.client.gpio_subscribe(binding.machine, binding.peripheral, pin,
                                            lambda event, t=tracker: t.on_event(event, *self._window))
+            elif binding.property == "gpio_pulse_width":
+                pin = _int(binding.opt("pin"))
+                pulse = _PulseTracker(state=self.client.gpio_get(binding.machine, binding.peripheral, pin),
+                                      last_fall_us=self._now_us)
+                self._pulses[binding.signal] = pulse
+                self.client.gpio_subscribe(binding.machine, binding.peripheral, pin, pulse.on_event)
         self._apply_inputs(initial_signals)
 
     def step(self, time_seconds: float, step_seconds: float, inputs: Mapping[str, float]) -> StepResult:
@@ -355,6 +390,11 @@ class RenodeAdapter(SimulatorAdapter):
                 value = (tracker.high_us / span) if span else float(tracker.state)
                 if binding.opt("invert", False):
                     value = 1.0 - value
+            elif binding.property == "gpio_pulse_width":
+                # seconds (scale 1e6 for microseconds); `timeout` seconds without a pulse -> 0
+                timeout = binding.opt("timeout")
+                value = self._pulses[binding.signal].value_us(
+                    end_us, None if timeout is None else float(timeout) * 1e6) * 1e-6
             elif binding.property == "gpio_state":
                 value = float(self.client.gpio_get(binding.machine, binding.peripheral, _int(binding.opt("pin"))))
                 if binding.opt("invert", False):

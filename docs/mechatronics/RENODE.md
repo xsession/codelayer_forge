@@ -56,6 +56,7 @@ outputs).
 | `property`       | Required keys | Value |
 |------------------|---------------|-------|
 | `gpio_duty`      | `object`, `pin` | fraction of the step the line was high, from edge timestamps (`invert` optional) |
+| `gpio_pulse_width` | `object`, `pin` (`timeout`) | width in seconds of the last complete high pulse, held until the next one ends (RC servo / ESC input); 0 after `timeout` seconds without a pulse |
 | `gpio_state`     | `object`, `pin` | line level at the end of the step (0/1) |
 | `sysbus`         | `address` (`width`, `signed`, `mask`, `float32`) | register/RAM value; `float32: true` decodes IEEE-754 |
 | `register_ratio` | `address`, `denominator_address` (`denominator_offset`, `width`) | e.g. `CCR1 / (ARR + 1)` for a PWM duty without edge events |
