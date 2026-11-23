@@ -1,0 +1,16 @@
+workspace
+build
+*.egg-info
+
+embeddyn/__pycache__/
+
+.embeddyn/
+
+# Local bootstrap environment (lock files are intentionally committed)
+.venv/
+
+# Example firmware build outputs
+examples/mechatronics/firmware/*.elf
+examples/mechatronics/firmware/*/build/
+__pycache__/
+examples/mechatronics/fmus/*.fmu

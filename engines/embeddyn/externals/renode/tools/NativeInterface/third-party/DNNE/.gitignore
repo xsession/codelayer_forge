@@ -1,0 +1,9 @@
+.vs/
+
+**/bin/
+**/obj/
+**/target/
+**/*.user
+**/launchSettings.json
+
+test/build/

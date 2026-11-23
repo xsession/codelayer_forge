@@ -1,0 +1,23 @@
+name: dc-motor-pid-sweep
+project: ../dc-motor.yaml
+priority: 10
+requirements:
+  simulators: [mock]
+  labels: [simulation]
+arguments:
+  mock: true
+variables:
+  controller.kp:
+    values: [0.2, 0.4, 0.6]
+  controller.ki:
+    range:
+      start: 0.01
+      stop: 0.1
+      count: 3
+      scale: logarithmic
+max_jobs: 100
+metrics:
+  - speed.settling_time
+  - speed.overshoot
+  - speed.iae
+  - current.peak
