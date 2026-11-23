@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@ew/core": ["packages/core/src/index.ts"],
+      "@ew/commands": ["packages/commands/src/index.ts"],
+      "@ew/graph": ["packages/graph/src/index.ts"],
+      "@ew/router": ["packages/graph-router/src/index.ts"],
+      "@ew/validation": ["packages/validation/src/index.ts"],
+      "@ew/plugin-api": ["packages/plugin-api/src/index.ts"],
+      "@ew/persistence": ["packages/persistence/src/index.ts"],
+      "@ew/workbench-ui": ["packages/workbench-ui/src/index.ts"],
+      "@plugins/example-electronics": ["plugins/example-electronics/src/index.ts"]
+    }
+  },
+  "include": ["apps", "packages", "plugins", "tests", "vite.config.ts"]
+}

@@ -107,6 +107,8 @@ python -m embeddyn mechatronics bindings-from-pinplan ../../examples/demo-worksp
 - `sdk`: public plugin SDKs.
 - `plugins`: first-party plugins.
 - `engines/embeddyn`: the co-simulation engine and Lab GUI (Python; imported with full history).
+- `engineering-workbench`: clean-room React/TypeScript workbench (semantic graph, commands, orthogonal router, validation, plugin API) that is to become the shell's editor ([its README](engineering-workbench/README.md)).
+- `UNIFIED_ENGINEERING_GUI_MASTER.md`: GUI design system and shell layout that all plugin UIs follow.
 - `schemas`: versioned JSON schemas.
 - `examples`: workspace and JSON-RPC sessions.
 - `docs`: architecture, plugin development, operations and ADRs.
