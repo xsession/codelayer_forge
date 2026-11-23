@@ -27,6 +27,10 @@ jobs:
           python-version: '3.12'
       - name: Install Embeddyn
         run: pip install -e '.[fmi,mujoco]' pytest
+      - name: Reference-FMUs (importer oracle)
+        run: |
+          python tools/fmi/fetch_reference_fmus.py "$RUNNER_TEMP/reference-fmus"
+          echo "EMBEDDYN_REFERENCE_FMUS=$RUNNER_TEMP/reference-fmus" >> "$GITHUB_ENV"
       - name: Unit tests
         run: pytest -q tests/mechatronics -rs
       - name: Build example FMU
