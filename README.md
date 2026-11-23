@@ -1,12 +1,13 @@
 # CodeLayer Forge
 
-CodeLayer Forge is a production-oriented, cross-platform engineering workbench for integrating domain tools as isolated plugins. The repository includes a Tauri desktop shell, a Rust plugin registry/CLI, a dependency-free Python plugin host and SDK, four initial engineering plugins, schemas, tests, CI, packaging scripts, security policy and an example workspace.
+CodeLayer Forge is a production-oriented, cross-platform engineering workbench for integrating domain tools as isolated plugins. This monorepo also contains **embeddyn** (`engines/embeddyn`), the engine that emulates and tunes whole embedded systems. It co-simulates firmware in Renode, electronics in ngspice, and mechanics as Python plants, FMUs or Webots. Forge reaches it through the `hu.codelayer.embeddyn` plugin. The repository includes a Tauri desktop shell, a Rust plugin registry/CLI, a dependency-free Python plugin host and SDK, four initial engineering plugins, schemas, tests, CI, packaging scripts, security policy and an example workspace.
 
 ## Included integrations
 
 - **Pin Configurator**: device/pin models, compatible-pin validation, automatic assignment and generated constraints.
 - **Route Core**: obstacle-aware orthogonal A* routing with bend penalties and route validation.
 - **OpenHDL Designer**: HDL graph validation, summary generation and synthesizable structural Verilog generation.
+- **embeddyn Co-simulation** (`plugins/embeddyn-cosim`): runs, verifies, tunes and tolerance-checks embeddyn projects, and opens the embeddyn Lab GUI (schematic, virtual instruments, 3-D view). It also generates Renode bindings from Pin Configurator pin plans. See [the plugin README](plugins/embeddyn-cosim/README.md) and [engines/embeddyn](engines/embeddyn/README.md).
 - **PyOnTrust Adapter**: a safe workflow adapter for JSON validation, template rendering and artifact writing. Its domain-specific API is intentionally isolated until the exact PyOnTrust contract is defined.
 
 ## Fastest local demonstration
@@ -80,6 +81,24 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+## Engine: embeddyn
+
+```bash
+cd engines/embeddyn
+pip install -e . pytest                 # or: make engine-setup
+embeddyn mechatronics gui examples/mechatronics/rc-servo-lab.yaml --open
+pytest -q tests/mechatronics            # make engine-test
+```
+
+The engine keeps its own documentation in `engines/embeddyn/docs`. The mechatronics guides are in `docs/mechatronics/`: QUICKSTART, GUI, RENODE, NGSPICE, TUNING, TOLERANCE and ROADMAP. Its CI workflows are `.github/workflows/engine-*.yml`. The candidates for further integration (Renode peripherals, MuJoCo, FMI export, CAN, HIL…) are compared in [docs/research/integration-candidates.md](docs/research/integration-candidates.md).
+
+Pin plan to co-simulation: `examples/demo-workspace/pin-plans/rc-servo.pinplan.json` and `devices/stm32l476-servo.json` produce the Renode bindings of the STM32L476 RC-servo firmware:
+
+```bash
+python -m embeddyn mechatronics bindings-from-pinplan ../../examples/demo-workspace/pin-plans/rc-servo.pinplan.json \
+  --device ../../examples/demo-workspace/devices/stm32l476-servo.json      # from engines/embeddyn
+```
+
 ## Repository map
 
 - `apps/desktop`: Tauri shell and web frontend.
@@ -87,6 +106,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - `hosts`: out-of-process plugin hosts and the capability broker.
 - `sdk`: public plugin SDKs.
 - `plugins`: first-party plugins.
+- `engines/embeddyn`: the co-simulation engine and Lab GUI (Python; imported with full history).
 - `schemas`: versioned JSON schemas.
 - `examples`: workspace and JSON-RPC sessions.
 - `docs`: architecture, plugin development, operations and ADRs.

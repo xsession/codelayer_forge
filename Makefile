@@ -1,4 +1,4 @@
-.PHONY: doctor catalog test verify demo web plugin-packages package rust-test
+.PHONY: doctor catalog test verify demo web plugin-packages package rust-test engine-setup engine-test lab
 
 doctor:
 	python3 scripts/doctor.py
@@ -28,3 +28,14 @@ package: verify plugin-packages
 
 rust-test:
 	cargo test --workspace
+
+ENGINE := engines/embeddyn
+
+engine-setup:
+	cd $(ENGINE) && python3 -m pip install -e . pytest pytest-asyncio httpx
+
+engine-test:
+	cd $(ENGINE) && python3 -m pytest -q tests/mechatronics
+
+lab:
+	cd $(ENGINE) && python3 -m embeddyn mechatronics gui examples/mechatronics/rc-servo-lab.yaml --open

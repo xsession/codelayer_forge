@@ -36,3 +36,24 @@ The checked-in frontend uses browser-native modules and no runtime framework dep
 ## Data flow
 
 A workspace contains source documents and generated artifacts. Plugins read/write only through workspace-relative paths when permissions allow it. Generated files are kept separate from editable graph and pin-plan sources. Long-running work will evolve toward cancellable task handles and progress events; the synchronous request/response implementation is intentionally narrow for the first release.
+
+## Engines
+
+Large domain engines live in `engines/`, separate from the plugins that expose
+them. `engines/embeddyn` is a complete Python package with its own CLI, tests and
+docs. `plugins/embeddyn-cosim` is a thin adapter: it imports the engine
+(`EMBEDDYN_ENGINE_ROOT`, else `engines/embeddyn`) and maps it onto three
+capabilities.
+
+```text
+Pin Configurator ──pin plan──▶ codelayer.simulation.renode-bindings ─┐
+OpenHDL Designer ──(planned: Verilator peripherals)──────────────────┤
+                                                                     ▼
+Desktop shell ──▶ codelayer.simulation.cosim / .analysis ──▶ embeddyn engine
+                                                       │   Renode · ngspice · FMU · Python plants
+                                                       └──▶ embeddyn Lab (127.0.0.1)
+```
+
+Other plugins depend on the capabilities, never on the engine package. So the
+engine can later run in its own process, on a worker, or be replaced, without
+changing its callers.
