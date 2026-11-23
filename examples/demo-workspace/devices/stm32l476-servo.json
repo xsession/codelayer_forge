@@ -1,0 +1,23 @@
+{
+  "id": "st.stm32l476rg-servo",
+  "name": "STM32L476RG (RC-servo subset)",
+  "package": "LQFP64",
+  "machine": "l476",
+  "notes": "Pins used by examples/mechatronics/firmware/rc-servo-l476 with the Renode peripherals of renode/stm32l476-servo.repl.",
+  "pins": [
+    {"name": "PA0", "capabilities": ["GPIO", "PWM"], "bank": "A", "voltage": 3.3,
+     "renode": {"GPIO": {"object": "sysbus.gpioPortA", "pin": 0}, "PWM": {"object": "sysbus.timer2", "pin": 0}}},
+    {"name": "PA5", "capabilities": ["GPIO"], "bank": "A", "voltage": 3.3,
+     "renode": {"GPIO": {"object": "sysbus.gpioPortA", "pin": 5}}},
+    {"name": "PA2", "capabilities": ["GPIO", "UART_TX"], "bank": "A", "voltage": 3.3,
+     "renode": {"GPIO": {"object": "sysbus.gpioPortA", "pin": 2}}},
+    {"name": "PA3", "capabilities": ["GPIO", "UART_RX"], "bank": "A", "voltage": 3.3,
+     "renode": {"GPIO": {"object": "sysbus.gpioPortA", "pin": 3}}},
+    {"name": "PC0", "capabilities": ["GPIO", "ADC"], "bank": "C", "voltage": 3.3,
+     "renode": {"ADC": {"object": "sysbus.adc1", "channel": 1, "min": 0, "max": 3300000}}},
+    {"name": "PC1", "capabilities": ["GPIO", "ADC"], "bank": "C", "voltage": 3.3,
+     "renode": {"ADC": {"object": "sysbus.adc1", "channel": 2, "min": 0, "max": 3300000}}},
+    {"name": "VDD", "capabilities": ["POWER"], "reserved": true},
+    {"name": "VSS", "capabilities": ["GROUND"], "reserved": true}
+  ]
+}

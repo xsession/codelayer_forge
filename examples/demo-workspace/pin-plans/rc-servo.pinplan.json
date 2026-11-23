@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "device": "st.stm32l476rg-servo",
+  "machine": "l476",
+  "signals": [
+    {"id": "servo_pulse", "requires": ["PWM"], "fixed_pin": "PA0",
+     "cosim": {"signal": "mcu.servo_pulse", "property": "gpio_pulse_width", "timeout": 0.05}},
+    {"id": "fault_led", "requires": ["GPIO"], "preferred": ["PA5"],
+     "cosim": {"signal": "mcu.fault_led"}},
+    {"id": "command_pot", "requires": ["ADC"], "preferred": ["PC0"],
+     "cosim": {"signal": "operator.command_voltage"}},
+    {"id": "feedback_pot", "requires": ["ADC"], "preferred": ["PC1"],
+     "cosim": {"signal": "servo.feedback_voltage"}},
+    {"id": "debug_uart_tx", "requires": ["UART_TX"]}
+  ],
+  "assignments": {
+    "servo_pulse": "PA0",
+    "fault_led": "PA5",
+    "command_pot": "PC0",
+    "feedback_pot": "PC1",
+    "debug_uart_tx": "PA2"
+  }
+}

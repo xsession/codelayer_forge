@@ -59,7 +59,7 @@ def verify_manifests() -> list[dict]:
 
 def verify_python() -> None:
     for path in ROOT.rglob("*.py"):
-        if any(part in {".venv", "venv", "target", "dist"} for part in path.parts):
+        if any(part in {".venv", "venv", "target", "dist", "node_modules", "externals"} for part in path.parts):
             continue
         py_compile.compile(str(path), doraise=True)
 
