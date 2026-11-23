@@ -34,7 +34,8 @@ export function Workbench({ initialProject, plugins, initialDiagramId }: Workben
 
   const selectedInstance = model.selection?.kind === 'instance' ? getInstance(model.project, model.diagramId, model.selection.id) : undefined;
   const selectedDefinition = selectedInstance ? getDefinition(model.project, selectedInstance.definitionId) : undefined;
-  const selectedConnection = model.selection?.kind === 'connection' ? diagram.connections.find((item) => item.id === model.selection?.id) : undefined;
+  const selectedConnectionId = model.selection?.kind === 'connection' ? model.selection.id : undefined;
+  const selectedConnection = selectedConnectionId ? diagram.connections.find((item) => item.id === selectedConnectionId) : undefined;
 
   return (
     <div className="ew-app-shell">

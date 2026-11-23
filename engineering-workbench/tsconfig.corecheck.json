@@ -7,16 +7,15 @@
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "baseUrl": ".",
     "paths": {
-      "@ew/core": ["packages/core/src/index.ts"],
-      "@ew/commands": ["packages/commands/src/index.ts"],
-      "@ew/graph": ["packages/graph/src/index.ts"],
-      "@ew/router": ["packages/graph-router/src/index.ts"],
-      "@ew/validation": ["packages/validation/src/index.ts"],
-      "@ew/plugin-api": ["packages/plugin-api/src/index.ts"],
-      "@ew/persistence": ["packages/persistence/src/index.ts"],
-      "@plugins/example-electronics": ["plugins/example-electronics/src/index.ts"]
+      "@ew/core": ["./packages/core/src/index.ts"],
+      "@ew/commands": ["./packages/commands/src/index.ts"],
+      "@ew/graph": ["./packages/graph/src/index.ts"],
+      "@ew/router": ["./packages/graph-router/src/index.ts"],
+      "@ew/validation": ["./packages/validation/src/index.ts"],
+      "@ew/plugin-api": ["./packages/plugin-api/src/index.ts"],
+      "@ew/persistence": ["./packages/persistence/src/index.ts"],
+      "@plugins/example-electronics": ["./plugins/example-electronics/src/index.ts"]
     }
   },
   "include": [
