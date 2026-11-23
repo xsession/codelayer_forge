@@ -13,14 +13,14 @@ close the loop with bench measurements.
 | Project model (signals, units, couplings, delays) | ✅ solid | one YAML describes the system |
 | Orchestrator / scheduler | ✅ solid | deterministic fixed-step and multi-rate, iterative coupling, checkpoints |
 | Storage, telemetry, distributed workers, HIL safety, twin analytics | ✅ baseline | good foundations, mostly exercised with mocks |
-| **Firmware: Renode** | 🟢 works end to end on real Renode | custom-cores build, reference STM32 firmware, closed loop validated ([RENODE.md](RENODE.md)) |
+| **Firmware: Renode** | 🟢 works end to end on real Renode | custom-cores build, reference STM32F4 motor firmware and an STM32L476 RC-servo controller, closed loop validated ([RENODE.md](RENODE.md), [RC_SERVO_L476.md](RC_SERVO_L476.md)) |
 | **Electrical: ngspice (libngspice)** | 🟢 works with carried state | `ngspice-shared` backend, switching H-bridge example, closed loop with Renode firmware ([NGSPICE.md](NGSPICE.md)); LTspice and the per-step `ngspice` backend remain batch-only |
 | Mechanical: Webots | 🔴 Webots physics unused | reference controller computes the plant in Python; 0.5 ms step is rounded to 1 ms of Webots time |
 | Python plant models, thermal domain | 🟢 works | `backend: python` for any domain; geared drivetrain and winding thermal models ([TUNING.md](TUNING.md)) |
 | Named simulator instances, FMI | 🟢 works | any number of instances per domain with own rates; FMI 2.0/3.0 co-simulation FMUs ([INSTANCES_AND_FMI.md](INSTANCES_AND_FMI.md)) |
 | Verification (energy, convergence, golden, scenarios) | 🟢 works | `mechatronics verify`, gating CI ([VERIFICATION.md](VERIFICATION.md)) |
 | Tuning (metrics, optimiser, parameter estimation) | 🟢 works | `mechatronics tune` (bounded Nelder–Mead over full co-simulations); parameter estimation with confidence intervals ([ESTIMATION.md](ESTIMATION.md)) |
-| Studio UI for co-simulation | 🔴 missing | no API/UI to run or plot mechatronics runs |
+| Lab GUI for co-simulation | 🟢 works | `mechatronics gui`: schematic editor, parts library, live run with scopes/meters/logic analyser, sliders, 3-D view, replay ([GUI.md](GUI.md)) |
 
 Firmware runs for real in Renode and electronics in ngspice; the mechanical domain still runs only as a built-in model.
 
@@ -134,7 +134,8 @@ Next:
 
 ## Phase R5: usability
 
-- [ ] Studio: run, compare and plot mechatronics runs; edit signal bindings.
+- [x] Lab GUI: build, run, plot and replay mechatronics runs; edit parts, wires and couplings ([GUI.md](GUI.md)).
+- [ ] Lab: compare several runs; edit binding files from the GUI; tuning/tolerance jobs from the GUI.
 - [ ] `embeddyn mechatronics doctor` checks the Renode build, ngspice library
   and Webots versions.
 - [ ] Docker image with Renode (custom-cores), ngspice and Webots for
@@ -164,7 +165,7 @@ checked against the code.* Order is the build order: each group unblocks the nex
 | 11 | ngspice: gate drive/dead time/MOSFET models, `.save` filtering, KiCad round trip | R2; INTEGRATION_PLAN 6 | missing |
 | 12 | Webots bridge using real physics (Supervisor motors/sensors, timestep alignment) | R3 | reference controller computes the plant itself |
 | 13 | Shared physical constants (`Kt`/`Ke` once); integer-tick time base | R3 | missing |
-| 14 | Studio UI for co-simulation runs, plots, binding editor | R5; INTEGRATION_PLAN 2 | missing |
+| 14 | Studio UI for co-simulation runs, plots, binding editor | R5; INTEGRATION_PLAN 2 | Lab GUI done (GUI.md); run comparison and binding-file editor missing |
 | 15 | `mechatronics doctor`, Docker image, HIL step with real hardware | R5; INTEGRATION_PLAN 8 | missing (HIL safety layer exists) |
 | 16 | Storage: override layers, PostgreSQL, telemetry range queries, retention/GC, bundle import/export, run recovery, backups | PHASE2 remaining | missing |
 | 17 | Twin: live streaming sync, clock-drift estimation, HTML/PDF and signed evidence reports | PHASE6 next steps | missing |

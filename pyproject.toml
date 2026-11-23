@@ -52,6 +52,7 @@ embeddyn = [
     "spec_mods/*.json",
     "local/static/*",
     "local/assets/*",
+    "mechatronics/gui/static/*",
 ]
 
 [project.optional-dependencies]

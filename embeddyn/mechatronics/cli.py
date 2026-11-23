@@ -334,6 +334,32 @@ def replay(
         raise typer.Exit(2)
 
 
+@mechatronics_app.command("gui")
+def gui_command(
+    project_file: Optional[Path] = typer.Argument(None, dir_okay=False, help="Project to open at start."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Interface to bind (keep it local: the API runs simulators)."),
+    port: int = typer.Option(8710, "--port"),
+    open_browser: bool = typer.Option(False, "--open", help="Open the Lab in the default browser."),
+) -> None:
+    """Embeddyn Lab: schematic editor, virtual instruments and 3-D view in the browser."""
+    from .gui.server import serve
+    server = serve(project_file.resolve() if project_file else None, host, port)
+    url = f"http://{host}:{server.server_address[1]}/"
+    if project_file:
+        url += f"#open={project_file.resolve()}"
+    typer.echo(f"embeddyn Lab on {url}  (Ctrl+C to stop)")
+    if open_browser:
+        import webbrowser
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.lab_state.stop_all()
+        server.server_close()
+
+
 @mechatronics_app.command("doctor")
 def doctor() -> None:
     tools = {name: shutil.which(name) for name in ("webots", "ngspice", "ltspice", "kicad-cli", "renode")}

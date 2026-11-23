@@ -208,6 +208,13 @@ class MechatronicProject:
     def load(cls, path: Path) -> "MechatronicProject":
         path = path.resolve()
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return cls.from_mapping(raw, path.parent, path.stem)
+
+    @classmethod
+    def from_mapping(cls, raw: dict[str, Any], root: Path, default_name: str = "project") -> "MechatronicProject":
+        """Project from an already parsed project document; relative paths
+        resolve against `root` (the directory the document belongs to)."""
+        raw = raw or {}
         schema_version = int(raw.get("schema_version", 1))
         signals: dict[str, Signal] = {}
         for name, spec in (raw.get("signals") or {}).items():
@@ -271,13 +278,13 @@ class MechatronicProject:
                 provenance[key] = [{"source": "component-instance", "component": instance_name,
                                     "value": q.value, "unit": q.unit}]
         project = cls(
-            name=str(raw.get("name", path.stem)),
+            name=str(raw.get("name", default_name)),
             step_seconds=step_seconds,
             duration_seconds=Quantity.parse(raw.get("duration_seconds", 1.0), "s").value,
             signals=signals,
             couplings=couplings,
             simulators=sims,
-            root=path.parent,
+            root=Path(root).resolve(),
             metadata=dict(raw.get("metadata") or {}),
             schema_version=schema_version,
             scheduler=scheduler,

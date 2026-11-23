@@ -4,7 +4,7 @@ import csv
 import math
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 
 from .adapters import SimulatorAdapter
 from .model import Coupling, Domain, MechatronicProject, SignalKind
@@ -39,6 +39,8 @@ class CoSimulationOrchestrator:
             self.by_target_domain[project.signals[coupling.target].domain].append(coupling)
         self.current_time = 0.0
         self.activation_count: InstanceCounter = InstanceCounter()
+        # Signals held at a fixed value (live operator controls in the GUI).
+        self.forced: dict[str, float] = {}
 
     def _schedule_entries(self) -> list[ScheduleEntry]:
         """Configured instances, adapters given without configuration (named
@@ -70,7 +72,26 @@ class CoSimulationOrchestrator:
         event_writer: StructuredRecordWriter | None = None,
         bus_writer: StructuredRecordWriter | None = None,
     ) -> list[dict[str, Any]]:
-        rows: list[dict[str, Any]] = []
+        rows = list(self.iterate(telemetry_writer=telemetry_writer, checkpoint_manager=checkpoint_manager,
+                                 checkpoint_interval_seconds=checkpoint_interval_seconds, resume_from=resume_from,
+                                 event_writer=event_writer, bus_writer=bus_writer))
+        if output_csv:
+            self.write_csv(output_csv, rows)
+        return rows
+
+    def iterate(
+        self,
+        telemetry_writer: TelemetryWriter | None = None,
+        checkpoint_manager: CheckpointManager | None = None,
+        checkpoint_interval_seconds: float | None = None,
+        resume_from: Path | None = None,
+        event_writer: StructuredRecordWriter | None = None,
+        bus_writer: StructuredRecordWriter | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Run the co-simulation one macro step at a time, yielding the initial
+        row and then one row per macro step. Closing the generator early stops
+        every adapter, so an interactive front end can stop a run at any step.
+        Signals in `self.forced` are held at their forced value throughout."""
         self._event_writer = event_writer
         self._bus_writer = bus_writer
         self.manager.start_all(self._adapter_inputs())
@@ -84,26 +105,25 @@ class CoSimulationOrchestrator:
                 if checkpoint_manager is not None and checkpoint_interval_seconds and checkpoint_interval_seconds > 0
                 else None
             )
-            if not rows:
-                initial = self._row(self.current_time)
-                rows.append(initial)
-                if telemetry_writer is not None:
-                    telemetry_writer.append(self._telemetry_row(self.current_time))
+            self._apply_forced()
+            if telemetry_writer is not None:
+                telemetry_writer.append(self._telemetry_row(self.current_time))
+            yield self._row(self.current_time)
             for _ in range(macro_count):
                 macro_start = self.current_time
                 macro_end = min(macro_start + macro, self.project.duration_seconds)
+                self._apply_forced()
                 for activation in self.scheduler.activations(macro_start, macro_end):
                     self._activate(activation.instance or activation.domain.value, activation.domain,
                                    activation.time_seconds, activation.step_seconds)
                 self.current_time = macro_end
                 self._commit_history()
-                row = self._row(self.current_time)
-                rows.append(row)
                 if telemetry_writer is not None:
                     telemetry_writer.append(self._telemetry_row(self.current_time))
                 if next_checkpoint is not None and self.current_time + 1e-15 >= next_checkpoint:
                     checkpoint_manager.save(self.current_time, self.snapshot())
                     next_checkpoint += checkpoint_interval_seconds
+                yield self._row(self.current_time)
                 if self.current_time >= self.project.duration_seconds - 1e-15:
                     break
         finally:
@@ -114,12 +134,17 @@ class CoSimulationOrchestrator:
                 event_writer.close()
             if bus_writer is not None:
                 bus_writer.close()
-        if output_csv:
-            self.write_csv(output_csv, rows)
-        return rows
+
+    def _apply_forced(self) -> None:
+        for name, value in list(self.forced.items()):
+            signal = self.project.signals.get(name)
+            if signal is not None:
+                self.values[name] = signal.clamp(float(value))
 
     def _activate(self, instance: str, domain: Domain, now: float, step_seconds: float) -> None:
         self._apply_couplings_iterative(domain)
+        if self.forced:
+            self._apply_forced()
         adapter = self.adapters.get(instance)
         if adapter is None:
             return
@@ -143,6 +168,8 @@ class CoSimulationOrchestrator:
                     writer.append({"time_seconds": event.time_seconds, "topic": event.topic, "payload": event.payload, "source": event.source})
             else:
                 self.values[name] = signal.clamp(float(value))
+        if self.forced:
+            self._apply_forced()
         diagnostics = result.diagnostics or {}
         for event in diagnostics.get("events", []):
             published = self.events.publish(float(event.get("time_seconds", now)), str(event["topic"]), event.get("payload"), adapter.name)
