@@ -13,7 +13,7 @@ on:
       - 'engines/embeddyn/tests/mechatronics/**'
       - 'engines/embeddyn/externals/patches/renode-infrastructure/**'
       - 'engines/embeddyn/tools/renode/**'
-      - 'engines/embeddyn/docs/mechatronics/NGSPICE.md'
+      - 'engines/embeddyn/docs/reference/ngspice.md'
       - '.github/workflows/engine-renode-cosim.yml'
 
 defaults:

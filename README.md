@@ -90,7 +90,7 @@ embeddyn mechatronics gui examples/mechatronics/rc-servo-lab.yaml --open
 pytest -q tests/mechatronics            # make engine-test
 ```
 
-The engine keeps its own documentation in `engines/embeddyn/docs`. The mechatronics guides are in `docs/mechatronics/`: QUICKSTART, GUI, RENODE, NGSPICE, TUNING, TOLERANCE and ROADMAP. Its CI workflows are `.github/workflows/engine-*.yml`. The candidates for further integration (Renode peripherals, MuJoCo, FMI export, CAN, HIL…) are compared in [docs/research/integration-candidates.md](docs/research/integration-candidates.md).
+The engine keeps its own documentation in `engines/embeddyn/docs`, an MkDocs site (`cd engines/embeddyn && mkdocs serve`) with getting-started pages, tutorials, theory of operation, how-to guides and reference. Its CI workflows are `.github/workflows/engine-*.yml`. The candidates for further integration (Renode peripherals, MuJoCo, FMI export, CAN, HIL…) are compared in [docs/research/integration-candidates.md](docs/research/integration-candidates.md).
 
 Pin plan to co-simulation: `examples/demo-workspace/pin-plans/rc-servo.pinplan.json` and `devices/stm32l476-servo.json` produce the Renode bindings of the STM32L476 RC-servo firmware:
 
