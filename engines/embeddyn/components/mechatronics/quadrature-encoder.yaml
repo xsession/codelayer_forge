@@ -1,0 +1,13 @@
+schema_version: 1
+kind: component-definition
+category: sensor
+identity:
+  namespace: codelayer.sensors
+  name: quadrature-encoder
+  version: 1.0.0
+parameters:
+  counts_per_revolution: {type: integer, default: 1024}
+models:
+  reduced_order: {adapter: python, fidelity: 1}
+  mechanical: {adapter: webots, fidelity: 2}
+  firmware: {adapter: renode, fidelity: 2}

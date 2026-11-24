@@ -1,0 +1,28 @@
+From: Embeddyn
+Subject: [PATCH] STM32_Timer: keep PWM output active when CCR >= ARR
+
+The model counts ARR ticks per period, so a compare at CCR = ARR fires at
+the same instant as the update event. When it lands after the update it
+clears a PWM1 output for a whole period: firmware that saturates its duty
+(CCR = ARR) sees full-period dropouts. Real hardware keeps the output
+active. Only the output is suppressed; the compare flag/IRQ still fire.
+
+---
+--- a/src/Emulator/Peripherals/Peripherals/Timers/STM32_Timer.cs
++++ b/src/Emulator/Peripherals/Peripherals/Timers/STM32_Timer.cs
+@@ -96,7 +96,14 @@
+                 ccTimers[j] = new LimitTimer(machine.ClockSource, frequency, this, String.Format("cctimer{0}", j + 1), limit: initialLimit, eventEnabled: true, direction: Direction.Ascending, enabled: false, autoUpdate: false, workMode: WorkMode.OneShot);
+                 ccTimers[j].LimitReached += delegate
+                 {
+-                    switch(outputCompareModes[j].Value)
++                    // This model's period is ARR ticks, so a compare at CCR >= ARR coincides
++                    // with the update event. Real hardware keeps a PWM output active for the
++                    // whole period there (CCR > ARR) or all but one tick (CCR = ARR); only
++                    // the compare flag/interrupt is raised. Without this guard the match can
++                    // land after the update and clear the output for a full period.
++                    var pwmAtOrBeyondReload = ccTimers[j].Limit >= Limit
++                        && (outputCompareModes[j].Value == OutputCompareMode.PwmMode1 || outputCompareModes[j].Value == OutputCompareMode.PwmMode2);
++                    switch(pwmAtOrBeyondReload ? OutputCompareMode.Frozen : outputCompareModes[j].Value)
+                     {
+                     case OutputCompareMode.SetActiveOnMatch:
+                         Connections[j].Blink(); // high pulse

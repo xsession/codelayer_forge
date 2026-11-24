@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@ew/core": ["./packages/core/src/index.ts"],
+      "@ew/commands": ["./packages/commands/src/index.ts"],
+      "@ew/graph": ["./packages/graph/src/index.ts"],
+      "@ew/router": ["./packages/graph-router/src/index.ts"],
+      "@ew/validation": ["./packages/validation/src/index.ts"],
+      "@ew/plugin-api": ["./packages/plugin-api/src/index.ts"],
+      "@ew/persistence": ["./packages/persistence/src/index.ts"],
+      "@plugins/example-electronics": ["./plugins/example-electronics/src/index.ts"]
+    }
+  },
+  "include": [
+    "packages/core/src/**/*.ts",
+    "packages/commands/src/**/*.ts",
+    "packages/graph/src/**/*.ts",
+    "packages/graph-router/src/**/*.ts",
+    "packages/validation/src/**/*.ts",
+    "packages/plugin-api/src/**/*.ts",
+    "packages/persistence/src/**/*.ts",
+    "plugins/example-electronics/src/**/*.ts"
+  ]
+}

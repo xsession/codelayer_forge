@@ -1,0 +1,89 @@
+manifest_version = 1
+id = "hu.codelayer.embeddyn"
+name = "embeddyn Co-simulation"
+version = "0.1.0"
+publisher = "CodeLayer"
+description = "Firmware (Renode), electronics (ngspice), mechanics (MuJoCo, python plants) and FMU co-simulation with the embeddyn engine: run, verify, tune, tolerance analysis, FMU export and checks, the Lab GUI and Renode bindings generated from pin plans."
+runtime = "python"
+entrypoint = "embeddyn_cosim.plugin:create_plugin"
+platform_api = ">=0.1.0,<0.2.0"
+supported_os = ["windows", "linux", "macos"]
+activation_events = [
+  "onWorkbench:simulation",
+  "onFileExtension:.cosim.yaml",
+  "onService:codelayer.simulation.cosim",
+  "onService:codelayer.simulation.renode-bindings",
+  "onCommand:embeddyn.runProject",
+  "onCommand:embeddyn.openLab",
+]
+
+[provides]
+"codelayer.simulation.cosim" = "1.0.0"
+"codelayer.simulation.analysis" = "1.0.0"
+"codelayer.simulation.renode-bindings" = "1.0.0"
+"codelayer.simulation.fmi" = "1.0.0"
+
+[permissions]
+workspace_read = true
+workspace_write = true
+# The Lab GUI listens on 127.0.0.1 only; no outbound network access.
+network = true
+serial = false
+usb = false
+spawn_processes = ["renode", "ngspice", "webots"]
+
+[[contributes.workbenches]]
+id = "simulation"
+title = "Debug and Simulation"
+icon = "resources/simulation.svg"
+order = 40
+
+[[contributes.commands]]
+id = "embeddyn.runProject"
+title = "Run Co-simulation"
+category = "Simulation"
+
+[[contributes.commands]]
+id = "embeddyn.validateProject"
+title = "Check Co-simulation Project"
+category = "Simulation"
+
+[[contributes.commands]]
+id = "embeddyn.exportFmu"
+title = "Export Plant as FMU"
+category = "Simulation"
+
+[[contributes.commands]]
+id = "embeddyn.checkFmu"
+title = "Check FMU"
+category = "Simulation"
+
+[[contributes.commands]]
+id = "embeddyn.openLab"
+title = "Open embeddyn Lab"
+category = "Simulation"
+
+[[contributes.commands]]
+id = "embeddyn.stopLab"
+title = "Stop embeddyn Lab"
+category = "Simulation"
+
+[[contributes.commands]]
+id = "embeddyn.bindingsFromPinPlan"
+title = "Generate Renode Bindings from Pin Plan"
+category = "Simulation"
+
+[[contributes.views]]
+id = "embeddyn.lab"
+title = "embeddyn Lab"
+location = "main"
+
+[[contributes.views]]
+id = "embeddyn.metrics"
+title = "Simulation Metrics"
+location = "bottom"
+
+[[contributes.editors]]
+id = "embeddyn.projectEditor"
+label = "Co-simulation Project"
+extensions = [".cosim.yaml"]

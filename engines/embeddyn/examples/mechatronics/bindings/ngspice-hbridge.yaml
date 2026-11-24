@@ -1,0 +1,14 @@
+# Signal bindings for circuits/motor-hbridge.cir (backend: ngspice-shared).
+# Inputs are held for one co-simulation step; outputs are averaged over it,
+# so the 20 kHz switching ripple doesn't alias into the mechanical model.
+bindings:
+  - {signal: electrical.pwm_duty, direction: input, source: Vdutyp, min: 0.0, max: 1.0}
+  - {signal: electrical.pwm_duty, direction: input, source: Vdutyn, scale: -1.0, min: 0.0, max: 1.0}
+  - {signal: electrical.supply_voltage, direction: input, source: Vbus}
+  - {signal: electrical.back_emf, direction: input, source: Vbemf}
+  # Changing the winding resistance at run time (e.g. a thermal model) uses `alter`.
+  - {signal: electrical.motor_resistance, direction: input, alter: Rmotor}
+
+  - {signal: electrical.motor_current, direction: output, vector: "i(Vsense)", mode: mean}
+  - {signal: electrical.motor_voltage, direction: output, vector: "V(a,b)", mode: mean}
+  - {signal: electrical.input_power, direction: output, vector: "V(pin)", mode: mean}
