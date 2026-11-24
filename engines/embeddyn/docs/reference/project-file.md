@@ -1,6 +1,6 @@
 # Project file
 
-A project is one YAML file. Paths inside it are relative to the file. Values may carry a unit string (`0.001 s`, `25 degC`), which is recorded but **not converted**, so write SI values.
+A project is one YAML file. Paths inside it are relative to the file. Values may carry a unit string (`"0.5 ms"`, `"60 rpm"`, `"25 degC"`); it is converted to the unit expected where the value is used, and incompatible units are an error ([units](../theory/system-model.md#units)).
 
 ```yaml
 schema_version: 1                     # 1 or 2
@@ -27,7 +27,7 @@ parameters:
   motor.resistance_20c: {value: 2.0, unit: ohm, provenance: [{source: datasheet}]}
 ```
 
-Referenced as `"@name"` from Python plant/FMU parameters, by Renode input bindings, and by tuning/tolerance/estimation specs.
+Referenced as `"@name"` from Python plant/FMU parameters and coupling transforms, by Renode input bindings, and by tuning/tolerance/estimation specs.
 
 ## `instances`
 
@@ -95,6 +95,9 @@ couplings:
   - source: sensor.raw
     target: mcu.adc
     transform: {type: quantize, gain: 0.0008, min: 0, max: 3.3}   # identity | affine | clamp | deadband | quantize
+  - source: arm.speed
+    target: motor.shaft_speed
+    gain: "@gear.ratio"               # a parameter: "@name", "-@name" or "1/@name" (gain, offset, min, max, deadband)
 ```
 
 `expression:` is rejected (no code in project files).
@@ -117,6 +120,7 @@ metrics:
   <name>: {type: step_response, signal: <signal>, target: <signal or number>, settling_band: 0.02, start: 0.0, end: 1.0}
   <name>: {type: stats, signal: <signal>, start: ..., end: ...}
   <name>: {type: integral, signal: <signal>}
+  <name>: {type: threshold, signal: <signal>, threshold: 0.5, direction: rising}   # rising | falling | either
 ```
 
 Figures: see [Metrics](../theory/metrics.md).
@@ -124,6 +128,21 @@ Figures: see [Metrics](../theory/metrics.md).
 ## `verification`
 
 `energy`, `convergence`, `golden`, `scenarios`; see the [verification reference](verification.md).
+
+## `faults`
+
+```yaml
+faults:
+  - {name: pot-stuck, signal: servo.feedback_voltage, type: stuck, start: 1.2 s, end: 1.8 s}
+  - {signal: sensor.temp, type: noise, std: 0.5 degC, seed: 1}
+  - {signal: encoder.count, type: offset, offset: 12, start: 1 s, period: 0.1 s, duty: 0.3}   # intermittent
+  - {signal: mcu.can, type: dropout, id: 0x101, direction: output, start: 1 s}               # bus frames
+```
+
+Types `stuck` (`value`), `offset`, `gain`, `noise` (`std`, `seed`), `drift`
+(`rate`), `dropout` (`probability`, `seed`) on continuous and discrete
+signals; `dropout` and `corrupt` (`bits`) on the event signal of a Renode UART
+or CAN bus, with `direction` and `id`; see [Fault injection](faults.md).
 
 ## `components`
 

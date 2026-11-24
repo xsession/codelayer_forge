@@ -118,8 +118,9 @@ Next:
 - [ ] Fix the Webots bridge: drive real motors and sensors through the
   Supervisor API, require `basicTimeStep` to divide the co-simulation step,
   and use Webots only where contacts or 3D matter.
-- [ ] Shared physical constants: declare `Kt`/`Ke` once instead of copying
-  them into coupling gains.
+- [x] Shared physical constants: coupling gains, offsets and limits can name a
+  parameter (`gain: "@motor.k"`, `"1/@gear.ratio"`); the examples declare `Kt`/`Ke`
+  and gear ratios once. Values with units are converted (`"0.5 ms"` → 0.0005 s).
 - [x] Integer-tick time base in the orchestrator: step k ends at k × macro step, so resumed runs match exactly.
 - [x] MuJoCo multibody backend with native state checkpoints ([MUJOCO.md](../reference/mujoco.md)).
 
@@ -175,11 +176,11 @@ checked against the code.* Order is the build order: each group unblocks the nex
 | 6 | ✅ Verification checks: energy balance, step-size convergence, golden waveforms, scenario matrices | INTEGRATION_PLAN 7 | done: `mechatronics verify` ([VERIFICATION.md](../reference/verification.md)), CI workflow |
 | 7 | ✅ Physical parameter estimation from bench traces (R, L, Kt, J, friction) with confidence intervals | R4; PHASE6 next steps | done: `mechatronics estimate` ([ESTIMATION.md](../reference/estimation.md)) |
 | 8 | ✅ Monte Carlo tolerance runs with yield; Sobol sensitivity | R4; PHASE6 | done: `mechatronics tolerance` ([TOLERANCE.md](../reference/tolerance.md)), local process pool; experiment-queue execution still open |
-| 9 | Renode sensor/bus signals: quadrature encoder, UART/SPI/I²C/CAN frames, fault injection | R1; INTEGRATION_PLAN 4 | UART consoles, CAN frames, quadrature encoders (TIM CNT injection) and SPI/I²C sensors (Renode ≥ 1.17) done; general fault injection missing |
+| 9 | ✅ Renode sensor/bus signals: quadrature encoder, UART/SPI/I²C/CAN frames, fault injection | R1; INTEGRATION_PLAN 4 | done: UART consoles, CAN frames, quadrature encoders (TIM CNT injection), SPI/I²C sensors (Renode ≥ 1.17); signal faults (stuck, offset, gain, noise, drift, dropout, intermittent) in projects, scenarios and `run --fault`; bus-frame faults (drop/corrupt UART bytes and CAN frames, both directions, by CAN id) ([fault injection](../reference/faults.md)) |
 | 10 | Renode fork fixes upstreamed (pins, patches 0001–0003, platform files), checkpoints via Save/Load | R1 | patches local only |
 | 11 | ngspice: gate drive/dead time/MOSFET models, `.save` filtering, KiCad round trip | R2; INTEGRATION_PLAN 6 | missing |
 | 12 | Webots bridge using real physics (Supervisor motors/sensors, timestep alignment) | R3 | MuJoCo backend now provides multibody physics ([MUJOCO.md](../reference/mujoco.md)); the Webots bridge still computes the plant itself |
-| 13 | Shared physical constants (`Kt`/`Ke` once); integer-tick time base | R3 | integer-tick time base done; shared constants missing |
+| 13 | ✅ Shared physical constants (`Kt`/`Ke` once); integer-tick time base | R3 | done: parameter references in couplings, unit conversion ([system model](../theory/system-model.md#units)) |
 | 14 | Studio UI for co-simulation runs, plots, binding editor | R5; INTEGRATION_PLAN 2 | Lab GUI done (GUI.md); run comparison and binding-file editor missing |
 | 15 | `mechatronics doctor`, Docker image, HIL step with real hardware | R5; INTEGRATION_PLAN 8 | missing (HIL safety layer exists) |
 | 16 | Storage: override layers, PostgreSQL, telemetry range queries, retention/GC, bundle import/export, run recovery, backups | PHASE2 remaining | missing |
