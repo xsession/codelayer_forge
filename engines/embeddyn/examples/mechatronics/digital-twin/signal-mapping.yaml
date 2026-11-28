@@ -1,3 +1,0 @@
-signals:
-  shaft_speed: mechanical.shaft_speed
-  motor_current: electrical.motor_current

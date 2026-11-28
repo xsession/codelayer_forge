@@ -1,0 +1,3 @@
+[submodule "engines/embeddyn"]
+	path = engines/embeddyn
+	url = https://github.com/xsession/embeddyn.git

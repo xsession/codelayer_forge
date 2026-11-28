@@ -1,8 +1,0 @@
-adapter: webots
-bindings:
-  - signal: mechanical.motor_torque
-    endpoint: {adapter: webots, object: drive_motor, property: torque, direction: input, unit: N*m}
-  - signal: mechanical.position
-    endpoint: {adapter: webots, object: shaft_sensor, property: position, direction: output, unit: rad}
-  - signal: mechanical.velocity
-    endpoint: {adapter: webots, object: shaft_sensor, property: velocity, direction: output, unit: rad/s}
