@@ -1,4 +1,10 @@
-.PHONY: doctor catalog test verify demo web plugin-packages package rust-test engine-setup engine-test lab
+.PHONY: start stop doctor catalog test verify demo web plugin-packages package rust-test engine-setup engine-test lab
+
+start:
+	./start.sh up
+
+stop:
+	./start.sh stop
 
 doctor:
 	python3 scripts/doctor.py

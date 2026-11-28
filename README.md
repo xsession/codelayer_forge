@@ -10,6 +10,20 @@ CodeLayer Forge is a production-oriented, cross-platform engineering workbench f
 - **embeddyn Co-simulation** (`plugins/embeddyn-cosim`): runs, verifies, tunes and tolerance-checks embeddyn projects, and opens the embeddyn Lab GUI (schematic, virtual instruments, 3-D view). It also generates Renode bindings from Pin Configurator pin plans. See [the plugin README](plugins/embeddyn-cosim/README.md) and [engines/embeddyn](engines/embeddyn/README.md).
 - **PyOnTrust Adapter**: a safe workflow adapter for JSON validation, template rendering and artifact writing. Its domain-specific API is intentionally isolated until the exact PyOnTrust contract is defined.
 
+## Start everything
+
+```bash
+./start.sh            # first run: Python environment with the embeddyn engine, then starts the services
+./start.sh status     # what runs where
+./start.sh stop
+```
+
+It starts the web shell (http://127.0.0.1:4173), the engineering workbench (http://127.0.0.1:8765) and the embeddyn
+Lab (http://127.0.0.1:8710) in the background, on 127.0.0.1 only, with logs in `.codelayer/state/logs`
+(`./start.sh logs lab`). `./start.sh lab project.yaml` runs the Lab in the foreground, `./start.sh broker` the
+capability broker, `./start.sh test` both test suites, `./start.sh help` everything else. `FORGE_PYTHON` picks an
+existing Python environment; `WEB_PORT`, `WORKBENCH_PORT`, `LAB_PORT` and `LAB_PROJECT` change the defaults.
+
 ## Fastest local demonstration
 
 Requirements: Python 3.11 or newer.
